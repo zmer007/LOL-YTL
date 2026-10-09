@@ -30,6 +30,12 @@ func main() {
 	mux.HandleFunc("/api/cache/status", cacheStatusHandler)
 	mux.HandleFunc("/api/version", versionHandler)
 
+	// 配置保存/加载 API
+	mux.HandleFunc("/api/config/save", configSaveHandler)
+	mux.HandleFunc("/api/config/list", configListHandler)
+	mux.HandleFunc("/api/config/load", configLoadHandler)
+	mux.HandleFunc("/api/config/delete", configDeleteHandler)
+
 	fmt.Printf("服务器启动: http://localhost%s\n", ListenAddr)
 	fmt.Printf("前端目录: %s/  图片目录: %s/\n", WebDir, AssetsDir)
 	if err := http.ListenAndServe(ListenAddr, mux); err != nil {

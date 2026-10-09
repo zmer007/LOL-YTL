@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -185,4 +186,141 @@ func cacheStartHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
+
+// ---------- 配置保存/加载 API ----------
+
+// SavesDir 配置文件保存目录
+const SavesDir = "saves"
+
+func savesPath() string {
+	return filepath.Join(AssetsDir, SavesDir)
+}
+
+// configSaveHandler POST /api/config/save?name=xxx
+func configSaveHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name required", http.StatusBadRequest)
+		return
+	}
+	// 安全校验
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
+	if err := os.MkdirAll(savesPath(), 0755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// 校验是合法 JSON
+	var tmp interface{}
+	if err := json.Unmarshal(body, &tmp); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join(savesPath(), name+".json")
+	if err := os.WriteFile(path, body, 0644); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "name": name})
+}
+
+// configListHandler GET /api/config/list
+func configListHandler(w http.ResponseWriter, r *http.Request) {
+	type SaveInfo struct {
+		Name    string `json:"name"`
+		Size    int64  `json:"size"`
+		ModTime string `json:"modTime"`
+	}
+	entries, err := os.ReadDir(savesPath())
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]SaveInfo{})
+		return
+	}
+	list := []SaveInfo{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".json") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		list = append(list, SaveInfo{
+			Name:    strings.TrimSuffix(name, ".json"),
+			Size:    info.Size(),
+			ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
+		})
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].ModTime > list[j].ModTime
+	})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+// configLoadHandler GET /api/config/load?name=xxx
+func configLoadHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name required", http.StatusBadRequest)
+		return
+	}
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join(savesPath(), name+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+// configDeleteHandler DELETE /api/config/delete?name=xxx
+func configDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name required", http.StatusBadRequest)
+		return
+	}
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join(savesPath(), name+".json")
+	if _, err := os.Stat(path); err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err := os.RemoveAll(path); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

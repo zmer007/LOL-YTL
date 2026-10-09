@@ -11,7 +11,6 @@
   /* ===== 顶栏 ===== */
   .topbar { height: 56px; background: linear-gradient(180deg, #1b1e27 0%, #14171e 100%); border-bottom: 1px solid #c8aa6e33; box-shadow: 0 2px 12px rgba(0,0,0,.4); display: flex; align-items: center; padding: 0 16px; gap: 10px; flex-shrink: 0; }
   .topbar .title { font-weight: 700; color: #c8aa6e; font-size: 17px; margin-right: 2px; white-space: nowrap; text-shadow: 0 1px 4px rgba(200,170,110,.3); letter-spacing: .5px; }
-  .topbar .ver { font-size: 11px; color: #6b7280; background: #1e232e; border: 1px solid #2c3240; border-radius: 4px; padding: 2px 6px; margin-right: 10px; }
   .topbar .divider { width: 1px; height: 24px; background: #2e3441; margin: 0 4px; }
   .topbar label { font-size: 13px; color: #9aa0ae; display: flex; align-items: center; gap: 6px; }
   .topbar input[type=number] { width: 74px; background: #1e222c; border: 1px solid #333844; color: #eee; padding: 5px 8px; border-radius: 6px; font-size: 13px; transition: border-color .15s; }
@@ -171,12 +170,9 @@
 <!-- 顶栏 -->
 <div class="topbar">
   <span class="title">⚔ 一图流编辑器</span>
-  <span class="ver" title="若非此版本请硬刷新 (Cmd+Shift+R)">v3.0</span>
   <label>宽 <input type="number" id="inW" value="1920" min="200"></label>
   <label>高 <input type="number" id="inH" value="1080" min="200"></label>
   <button class="btn" id="btnApplySize">应用尺寸</button>
-  <span class="divider"></span>
-  <label>版本 <input type="text" id="inVersion" value="16.10.1" style="width:84px" title="Data Dragon 版本号"></label>
   <span class="divider"></span>
   <label>背景色 <input type="color" id="bgColor" value="#0c0e14"></label>
   <button class="btn" id="btnBgImg">背景图</button>
@@ -1436,9 +1432,7 @@ window.addEventListener('resize', hideCtxMenu);
 //  缓存官方资源 (委托 Go 服务器下载到 assets/ 目录)
 // ============================================================
 async function cacheOfficialAssets() {
-  const version = (document.getElementById('inVersion').value || '').trim() || '16.10.1';
-
-  if (!confirm(`将从 Data Dragon ${version} 下载全部英雄头像、装备图标、符文图标、召唤师技能图标到本地 assets/ 目录。\n图片存于磁盘, 不占浏览器内存。\n确定继续？`)) return;
+  if (!confirm(`将从 Data Dragon 下载全部英雄头像、装备图标、符文图标、召唤师技能图标到本地 assets/ 目录。\n图片存于磁盘, 不占浏览器内存。\n确定继续？`)) return;
 
   const setMsg = (m) => {
     toast(m);
@@ -1448,7 +1442,7 @@ async function cacheOfficialAssets() {
 
   try {
     // 启动服务器端缓存
-    const start = await fetch(`/api/cache/start?version=${encodeURIComponent(version)}`);
+    const start = await fetch('/api/cache/start');
     const sd = await start.json();
     if (!sd.status) throw new Error('启动失败');
 
@@ -1505,10 +1499,44 @@ document.getElementById('btnBgImg').onclick = () => pickImage(d => { bgImageData
 document.getElementById('btnClearBg').onclick = () => { bgImageData = null; render(); };
 
 // ============================================================
-//  保存 / 加载 JSON
+//  保存 / 加载 JSON  (保存到服务器 assets/saves/)
 // ============================================================
-document.getElementById('btnSave').onclick = () => {
-  const data = {
+
+// 应用配置数据到画布 (共用: 文件加载 / 服务器加载)
+function applyConfigData(d) {
+  document.getElementById('inW').value = d.width || 1920;
+  document.getElementById('inH').value = d.height || 1080;
+  document.getElementById('bgColor').value = d.bgColor || '#0c0e14';
+  workspace.style.width = d.width + 'px';
+  workspace.style.height = d.height + 'px';
+  bgImageData = d.bgImage || null;
+  elements = d.elements || [];
+  if (d.library) {
+    imageLibrary = {
+      champion: d.library.champion || [],
+      item: d.library.item || [],
+      rune: d.library.rune || [],
+      summoner: d.library.summoner || []
+    };
+  } else {
+    imageLibrary = { champion: [], item: [], rune: [], summoner: [] };
+  }
+  migrateLibrary();
+  const allIds = [];
+  for (const t of ['champion','item','rune','summoner']) {
+    for (const g of imageLibrary[t]) for (const it of g.items) allIds.push(it.id);
+  }
+  libImgId = Math.max(1, ...allIds.map(x=>parseInt(String(x).replace('lib_',''))||0)) + 1;
+  zCounter = elements.reduce((m,e)=>Math.max(m,e.zIndex||0), 10);
+  idCounter = elements.length + 1;
+  selectedId = null;
+  selectedIds = [];
+  renderLibrary(); render(); renderProps();
+}
+
+// 构建当前配置数据
+function buildConfigData() {
+  return {
     width: parseInt(document.getElementById('inW').value),
     height: parseInt(document.getElementById('inH').value),
     bgColor: document.getElementById('bgColor').value,
@@ -1516,48 +1544,117 @@ document.getElementById('btnSave').onclick = () => {
     elements,
     library: imageLibrary
   };
-  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = '一图流配置.json';
-  a.click();
-  toast('已保存配置(含图库)');
+}
+
+// 保存到服务器
+document.getElementById('btnSave').onclick = async () => {
+  const name = prompt('请输入配置名称:', '默认配置');
+  if (!name || !name.trim()) return;
+  const data = buildConfigData();
+  try {
+    const res = await fetch(`/api/config/save?name=${encodeURIComponent(name.trim())}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    toast(`已保存: ${name.trim()}`);
+  } catch (err) {
+    alert('保存失败: ' + err.message);
+  }
 };
 
-document.getElementById('btnLoad').onclick = () => document.getElementById('fileLoader').click();
+// 加载配置列表模态框
+const loadModal = document.createElement('div');
+loadModal.className = 'lib-modal';
+loadModal.innerHTML = `
+  <div class="lib-modal-mask"></div>
+  <div class="lib-modal-panel" style="width:480px;height:auto;max-width:90vw">
+    <div class="lib-modal-head">
+      <span class="lib-modal-title">配置列表</span>
+      <button class="lib-modal-close" id="loadModalClose">×</button>
+    </div>
+    <div class="lib-modal-body">
+      <div id="configList" style="max-height:400px;overflow:auto"></div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn" id="cfgRefresh" style="flex:1">刷新列表</button>
+        <button class="btn" id="cfgImportLocal" style="flex:1">从本地文件导入</button>
+      </div>
+    </div>
+  </div>`;
+document.body.appendChild(loadModal);
+loadModal.querySelector('#loadModalClose').onclick = () => loadModal.classList.remove('show');
+loadModal.querySelector('.lib-modal-mask').onclick = () => loadModal.classList.remove('show');
+
+async function loadConfigList() {
+  const box = loadModal.querySelector('#configList');
+  box.innerHTML = '<div class="lib-empty">加载中...</div>';
+  try {
+    const res = await fetch('/api/config/list');
+    const list = await res.json();
+    if (list.length === 0) {
+      box.innerHTML = '<div class="lib-empty">暂无保存的配置</div>';
+      return;
+    }
+    box.innerHTML = list.map(it => `
+      <div class="lib-item" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #222">
+        <div style="flex:1">
+          <div style="color:#eee;font-size:14px">${esc(it.name)}</div>
+          <div style="color:#666;font-size:11px">${it.modTime} · ${Math.round(it.size/1024)} KB</div>
+        </div>
+        <button class="btn" data-name="${esc(it.name)}" data-act="load">加载</button>
+        <button class="btn danger" data-name="${esc(it.name)}" data-act="del" style="padding:4px 10px">删除</button>
+      </div>
+    `).join('');
+    box.querySelectorAll('button[data-act]').forEach(btn => {
+      btn.onclick = async () => {
+        const name = btn.dataset.name;
+        const act = btn.dataset.act;
+        if (act === 'load') {
+          try {
+            const r = await fetch(`/api/config/load?name=${encodeURIComponent(name)}`);
+            if (!r.ok) throw new Error('加载失败');
+            const d = await r.json();
+            applyConfigData(d);
+            loadModal.classList.remove('show');
+            toast(`已加载: ${name}`);
+          } catch (err) { alert('加载失败: ' + err.message); }
+        } else if (act === 'del') {
+          if (!confirm(`确定删除配置 "${name}" ?`)) return;
+          try {
+            await fetch(`/api/config/delete?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+            loadConfigList();
+            toast(`已删除: ${name}`);
+          } catch (err) { alert('删除失败: ' + err.message); }
+        }
+      };
+    });
+  } catch (err) {
+    box.innerHTML = '<div class="lib-empty">加载列表失败</div>';
+  }
+}
+
+loadModal.querySelector('#cfgRefresh').onclick = loadConfigList;
+loadModal.querySelector('#cfgImportLocal').onclick = () => {
+  loadModal.classList.remove('show');
+  document.getElementById('fileLoader').click();
+};
+
+document.getElementById('btnLoad').onclick = () => {
+  loadModal.classList.add('show');
+  loadConfigList();
+};
 document.getElementById('btnCache').onclick = () => cacheOfficialAssets();
+
+// 本地文件导入 (保留兼容)
 document.getElementById('fileLoader').onchange = (ev) => {
   const f = ev.target.files[0]; if (!f) return;
   const r = new FileReader();
   r.onload = () => {
     try {
       const d = JSON.parse(r.result);
-      document.getElementById('inW').value = d.width || 1920;
-      document.getElementById('inH').value = d.height || 1080;
-      document.getElementById('bgColor').value = d.bgColor || '#0c0e14';
-      workspace.style.width = d.width+'px';
-      workspace.style.height = d.height+'px';
-      bgImageData = d.bgImage || null;
-      elements = d.elements || [];
-      // 恢复图库 (兼容旧配置无 library 字段 / 旧扁平格式)
-      if (d.library) {
-        imageLibrary = { champion: d.library.champion||[], item: d.library.item||[], rune: d.library.rune||[] };
-      } else {
-        imageLibrary = { champion: [], item: [], rune: [] };
-      }
-      migrateLibrary();
-      // 同步 libImgId
-      const allIds = [];
-      for (const t of ['champion','item','rune']) {
-        for (const g of imageLibrary[t]) for (const it of g.items) allIds.push(it.id);
-      }
-      libImgId = Math.max(1, ...allIds.map(x=>parseInt(String(x).replace('lib_',''))||0)) + 1;
-      zCounter = elements.reduce((m,e)=>Math.max(m,e.zIndex||0), 10);
-      idCounter = elements.length + 1;
-      selectedId = null;
-      selectedIds = [];
-      renderLibrary(); render(); renderProps();
-      toast('已加载配置');
+      applyConfigData(d);
+      toast('已加载本地配置');
     } catch(err) { alert('配置文件解析失败: '+err.message); }
   };
   r.readAsText(f);

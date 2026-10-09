@@ -24,7 +24,7 @@ COPY --from=builder /build/server ./build/server
 COPY web/ ./web/
 
 # 创建图片缓存目录
-RUN mkdir -p assets/champions assets/items assets/runes build
+RUN mkdir -p assets/champions assets/items assets/runes assets/summoners assets/saves build
 
 EXPOSE 8765
 
