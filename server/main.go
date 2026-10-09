@@ -14,6 +14,8 @@ func main() {
 	for _, dir := range AssetSubdirs {
 		os.MkdirAll(filepath.Join(AssetsDir, dir), 0755)
 	}
+	// 确保元数据目录存在
+	os.MkdirAll(MetaDir, 0755)
 
 	mux := http.NewServeMux()
 

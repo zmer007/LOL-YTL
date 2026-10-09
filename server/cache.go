@@ -71,11 +71,20 @@ func cacheChampions(base string) error {
 
 	names := make([]string, 0, len(data))
 	cnNames := map[string]string{}
+	meta := map[string]string{} // 中文名 → 职业分类 (取第一个 tag)
 	for k, v := range data {
 		names = append(names, k)
-		if vm, ok := v.(map[string]interface{}); ok {
-			if n, ok := vm["name"].(string); ok {
-				cnNames[k] = n
+		vm, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if n, ok := vm["name"].(string); ok {
+			cnNames[k] = n
+			// 取第一个职业 tag 作为主分类
+			if tags, ok := vm["tags"].([]interface{}); ok && len(tags) > 0 {
+				if tag, ok := tags[0].(string); ok {
+					meta[n] = tag
+				}
 			}
 		}
 	}
@@ -83,6 +92,9 @@ func cacheChampions(base string) error {
 
 	downloadImages("champions", names, cnNames,
 		func(name string) string { return fmt.Sprintf("%s/img/champion/%s.png", base, name) })
+
+	// 保存分类元数据
+	saveMeta("champions", meta)
 	return nil
 }
 
@@ -98,6 +110,7 @@ func cacheItems(base string) error {
 
 	var ids []string
 	cnNames := map[string]string{}
+	meta := map[string]string{} // 中文名 → 分类
 	for k, v := range data {
 		vm, ok := v.(map[string]interface{})
 		if !ok {
@@ -114,13 +127,50 @@ func cacheItems(base string) error {
 		ids = append(ids, k)
 		if n, ok := vm["name"].(string); ok {
 			cnNames[k] = n
+			// 将官方 tags 映射为中文大类 (按优先级)
+			meta[n] = mapItemTags(vm["tags"])
 		}
 	}
 	sort.Strings(ids)
 
 	downloadImages("items", ids, cnNames,
 		func(id string) string { return fmt.Sprintf("%s/img/item/%s.png", base, id) })
+
+	// 保存分类元数据
+	saveMeta("items", meta)
 	return nil
+}
+
+// mapItemTags 将装备官方 tags 映射为中文大类 (按优先级匹配)
+func mapItemTags(tags interface{}) string {
+	tagList, ok := tags.([]interface{})
+	if !ok {
+		return "其他"
+	}
+	has := func(t string) bool {
+		for _, x := range tagList {
+			if s, ok := x.(string); ok && s == t {
+				return true
+			}
+		}
+		return false
+	}
+	// 优先级: 攻击 > 法术 > 防御 > 移动 > 辅助
+	switch {
+	case has("Damage") || has("ArmorPenetration") || has("CriticalStrike") ||
+		has("AttackSpeed") || has("LifeSteal") || has("OnHit"):
+		return "攻击"
+	case has("SpellDamage") || has("MagicPenetration") || has("Mana") ||
+		has("ManaRegen") || has("SpellVamp"):
+		return "法术"
+	case has("Health") || has("Armor") || has("SpellBlock") ||
+		has("MagicResist") || has("HealthRegen") || has("Tenacity"):
+		return "防御"
+	case has("Boots") || has("NonbootsMovement") || has("Movement"):
+		return "移动"
+	default:
+		return "辅助"
+	}
 }
 
 // cacheRunes 下载所有符文图标
@@ -134,8 +184,10 @@ func cacheRunes(base string) error {
 
 	var paths []string
 	cnNames := map[string]string{}
+	meta := map[string]string{} // 中文名 → 符文路径
 	for _, t := range trees {
 		tm, _ := t.(map[string]interface{})
+		pathName, _ := tm["name"].(string) // 路径中文名 (精密/主宰/巫术/坚决/启迪)
 		slots, _ := tm["slots"].([]interface{})
 		for _, s := range slots {
 			sm, _ := s.(map[string]interface{})
@@ -149,6 +201,7 @@ func cacheRunes(base string) error {
 				paths = append(paths, icon)
 				if n, ok := rum["name"].(string); ok {
 					cnNames[icon] = n
+					meta[n] = pathName
 				}
 			}
 		}
@@ -158,7 +211,53 @@ func cacheRunes(base string) error {
 		func(path string) string {
 			return fmt.Sprintf("%s/img/%s", DDragonBase, strings.TrimPrefix(path, "/"))
 		})
+
+	// 属性碎片 (Stat Shards) - Data Dragon 不提供, 从 CommunityDragon 获取
+	cacheStatShards(meta)
+
+	// 保存分类元数据
+	saveMeta("runes", meta)
 	return nil
+}
+
+// cacheStatShards 从 CommunityDragon 获取属性碎片并下载图标
+func cacheStatShards(meta map[string]string) {
+	setProgress("rune", 0, 0, "获取属性碎片...")
+	raw, err := fetchJSON(CDragonBase + "/perks.json")
+	if err != nil {
+		return
+	}
+	perks, ok := raw.([]interface{})
+	if !ok {
+		return
+	}
+	var paths []string
+	cnNames := map[string]string{}
+	for _, p := range perks {
+		pm, _ := p.(map[string]interface{})
+		iconPath, _ := pm["iconPath"].(string)
+		if !strings.Contains(iconPath, "StatMods") {
+			continue
+		}
+		name, _ := pm["name"].(string)
+		if name == "" {
+			continue
+		}
+		// iconPath 形如 /lol-game-data/assets/v1/perk-images/StatMods/StatModsArmorIcon.png
+		// Data Dragon 对应路径: perk-images/StatMods/StatModsArmorIcon.png
+		idx := strings.Index(iconPath, "perk-images/")
+		if idx < 0 {
+			continue
+		}
+		relPath := iconPath[idx:]
+		paths = append(paths, relPath)
+		cnNames[relPath] = name
+		meta[name] = "属性碎片"
+	}
+	downloadImages("runes", paths, cnNames,
+		func(path string) string {
+			return fmt.Sprintf("%s/img/%s", DDragonBase, path)
+		})
 }
 
 // cacheSummoners 下载所有召唤师技能图标
@@ -222,14 +321,6 @@ func downloadImages(typeDir string, keys []string, cnNames map[string]string, ur
 			safeName := sanitizeFilename(name)
 			dest := filepath.Join(AssetsDir, typeDir, safeName+".png")
 
-			// 已存在则跳过
-			if _, err := os.Stat(dest); err == nil {
-				atomic.AddInt32(&done, 1)
-				d := int(atomic.LoadInt32(&done))
-				setProgress(typeDir, d, total, fmt.Sprintf("下载%s %d/%d", typeDir, d, total))
-				return
-			}
-
 			resp, err := http.Get(urlFn(k))
 			if err != nil {
 				atomic.AddInt32(&done, 1)
@@ -283,4 +374,17 @@ func fetchJSON(url string) (interface{}, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+// saveMeta 保存分类元数据到 assets/meta/{type}.json
+// meta: 中文名 → 分类 (职业/大类/符文路径)
+func saveMeta(typeDir string, meta map[string]string) {
+	os.MkdirAll(MetaDir, 0755)
+	path := filepath.Join(MetaDir, typeDir+".json")
+	f, err := os.Create(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	json.NewEncoder(f).Encode(meta)
 }

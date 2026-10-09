@@ -26,8 +26,9 @@ type CacheProgress struct {
 
 // LibItem 图库中的一项
 type LibItem struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	Category string `json:"category"` // 官方分类 (职业/大类/符文路径)
 }
 
 var (
@@ -70,13 +71,15 @@ func libraryHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// listType 列出某目录下的图片
+// listType 列出某目录下的图片, 并附带官方分类
 func listType(typeDir string) []LibItem {
 	dir := filepath.Join(AssetsDir, typeDir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return []LibItem{}
 	}
+	// 加载分类元数据 (来自官方 Data Dragon, 缓存时保存)
+	meta := loadMeta(typeDir)
 	items := []LibItem{}
 	for _, e := range entries {
 		if e.IsDir() {
@@ -86,15 +89,30 @@ func listType(typeDir string) []LibItem {
 		if !isImage(name) {
 			continue
 		}
+		cnName := strings.TrimSuffix(name, filepath.Ext(name))
 		items = append(items, LibItem{
-			Name: strings.TrimSuffix(name, filepath.Ext(name)),
-			URL:  fmt.Sprintf("/assets/%s/%s", typeDir, name),
+			Name:     cnName,
+			URL:      fmt.Sprintf("/assets/%s/%s", typeDir, name),
+			Category: meta[cnName], // 空字符串表示无分类
 		})
 	}
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Name < items[j].Name
 	})
 	return items
+}
+
+// loadMeta 加载 assets/meta/{typeDir}.json 分类映射
+func loadMeta(typeDir string) map[string]string {
+	meta := map[string]string{}
+	path := filepath.Join(MetaDir, typeDir+".json")
+	f, err := os.Open(path)
+	if err != nil {
+		return meta
+	}
+	defer f.Close()
+	json.NewDecoder(f).Decode(&meta)
+	return meta
 }
 
 // isImage 判断是否为图片文件

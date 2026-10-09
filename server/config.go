@@ -5,12 +5,16 @@ package main
 const (
 	// AssetsDir 图片缓存根目录
 	AssetsDir = "assets"
+	// MetaDir 分类元数据目录 (name → category 映射, 来自官方 Data Dragon)
+	MetaDir = "assets/meta"
 	// WebDir 前端静态文件目录
 	WebDir = "web"
 	// DDragonBase Riot 官方 Data Dragon CDN 地址
 	DDragonBase = "https://ddragon.leagueoflegends.com/cdn"
+	// CDragonBase CommunityDragon CDN (提供 Data Dragon 缺失的属性碎片等数据)
+	CDragonBase = "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/zh_cn/v1"
 	// DefaultVersion 默认游戏版本
-	DefaultVersion = "16.10.1"
+	DefaultVersion = "16.20.1"
 	// ListenAddr 监听地址
 	ListenAddr = ":8765"
 	// DownloadConcurrency 下载并发数

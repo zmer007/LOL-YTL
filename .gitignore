@@ -1,7 +1,14 @@
 # 编译产物
 build/
-tmp/
 *.exe
+*.out
+*.test
+*.prof
+coverage.out
+
+# Go 编译生成的二进制 (本地测试产物)
+/lol-server
+lol-server-*
 
 # 系统
 .DS_Store

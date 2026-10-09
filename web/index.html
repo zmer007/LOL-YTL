@@ -259,7 +259,22 @@ let bgImageData = null;     // dataURL
 let imageLibrary = { champion: [], item: [], rune: [], summoner: [] };
 let libImgId = 1;
 let grpId = 1;
+let libraryLoaded = false;  // 图库是否已从服务器成功加载 (防止空数据覆盖已保存的分组)
+let serverLibraryData = {}; // 服务器返回的原始数据(含 category), 用于恢复时重建默认分类分组
 const DEFAULT_GROUP_NAME = '全部';   // 默认分组名(存放所有官方图片, 不可删除单图)
+
+// 官方分类 → 中文分组名映射 (来自 Data Dragon API)
+const CHAMPION_TAG_MAP = {
+  'Fighter': '战士', 'Mage': '法师', 'Assassin': '刺客',
+  'Tank': '坦克', 'Marksman': '射手', 'Support': '辅助'
+};
+// 装备/符文分类已由服务器返回中文名, 这里仅定义顺序
+const DEFAULT_CATEGORIES = {
+  champion: ['战士', '法师', '刺客', '坦克', '射手', '辅助'],
+  item: ['攻击', '法术', '防御', '移动', '辅助'],
+  rune: ['精密', '主宰', '巫术', '坚决', '启迪', '属性碎片'],
+  summoner: []
+};
 
 // 生成一个新分组
 function newGroup(name) {
@@ -997,6 +1012,8 @@ function pickImage(cb) {
 // 分组结构持久化 (localStorage): 保存分组名/折叠态/各组图片URL, 刷新后按 URL 还原
 const LIB_GROUPS_KEY = 'lol_lib_groups_v1';
 function saveGroupsToStorage() {
+  // 图库未从服务器加载成功时不保存, 避免空数据覆盖已保存的分组结构
+  if (!libraryLoaded) return;
   try {
     const data = {};
     for (const t of ['champion', 'item', 'rune', 'summoner']) {
@@ -1022,22 +1039,45 @@ function restoreGroupsFromStorage() {
       ensureGroups(t);
       const allImgs = imageLibrary[t].flatMap(g => g.items);
       const urlToItem = new Map(allImgs.map(it => [it.url, it]));
+      const matchedUrls = new Set();
       const newGroups = [];
+      const savedGroupNames = new Set();
       for (const sg of saved) {
         // 兼容旧数据: 旧默认组名"默认"统一为"全部"
         const name = sg.name === '默认' ? DEFAULT_GROUP_NAME : (sg.name || DEFAULT_GROUP_NAME);
+        savedGroupNames.add(name);
         const grp = newGroup(name);
         grp.collapsed = !!sg.collapsed;
         for (const url of (sg.urls || [])) {
           const it = urlToItem.get(url);
-          if (it) { grp.items.push(it); urlToItem.delete(url); }
+          if (it) {
+            // 克隆图片项 (新 ID), 允许同一图片出现在多个分组 (如"全部"+分类组)
+            grp.items.push({ ...it, id: 'lib_' + (libImgId++) });
+            matchedUrls.add(url);
+          }
         }
         newGroups.push(grp);
       }
-      // 剩余未匹配的图片(新增的或已删除分组的)放入第一个分组
-      if (urlToItem.size > 0) {
+      // 剩余未匹配的图片(新增的)放入第一个分组
+      const unmatched = [...urlToItem.values()].filter(it => !matchedUrls.has(it.url));
+      if (unmatched.length > 0) {
         if (newGroups.length === 0) newGroups.push(newGroup(DEFAULT_GROUP_NAME));
-        for (const it of urlToItem.values()) newGroups[0].items.push(it);
+        for (const it of unmatched) newGroups[0].items.push(it);
+      }
+      // 补全缺失的默认分类分组 (用户旧数据中没有分类分组时自动创建)
+      const serverItems = serverLibraryData[t] || [];
+      const catNames = DEFAULT_CATEGORIES[t] || [];
+      for (const catName of catNames) {
+        if (savedGroupNames.has(catName)) continue;  // 用户已有该分组, 跳过
+        const grp = newGroup(catName);
+        for (const it of serverItems) {
+          let itemCat = it.category || '';
+          if (t === 'champion') itemCat = CHAMPION_TAG_MAP[it.category] || '';
+          if (itemCat === catName) {
+            grp.items.push({ id: 'lib_' + (libImgId++), name: it.name, url: it.url });
+          }
+        }
+        if (grp.items.length > 0) newGroups.push(grp);
       }
       imageLibrary[t] = newGroups;
     }
@@ -1049,15 +1089,35 @@ async function loadLibraryFromServer() {
   try {
     const res = await fetch('/api/library');
     const data = await res.json();
+    serverLibraryData = data;  // 保存原始数据(含 category), 供恢复分组时使用
     imageLibrary = { champion: [], item: [], rune: [] };
     for (const t of ['champion', 'item', 'rune', 'summoner']) {
+      // 第一个分组"全部": 存放所有官方图片
       imageLibrary[t] = [newGroup(DEFAULT_GROUP_NAME)];
+      const allGroup = imageLibrary[t][0];
       for (const it of (data[t] || [])) {
-        imageLibrary[t][0].items.push({ id: 'lib_' + (libImgId++), name: it.name, url: it.url });
+        allGroup.items.push({ id: 'lib_' + (libImgId++), name: it.name, url: it.url });
+      }
+      // 按官方分类创建默认分组 (图片复制进去, "全部"仍保留所有图片)
+      const catNames = DEFAULT_CATEGORIES[t] || [];
+      for (const catName of catNames) {
+        const grp = newGroup(catName);
+        for (const it of (data[t] || [])) {
+          // 英雄分类需翻译英文 tag → 中文; 装备/符文已是中文
+          let itemCat = it.category || '';
+          if (t === 'champion') itemCat = CHAMPION_TAG_MAP[it.category] || '';
+          if (itemCat === catName) {
+            grp.items.push({ id: 'lib_' + (libImgId++), name: it.name, url: it.url });
+          }
+        }
+        if (grp.items.length > 0) imageLibrary[t].push(grp);
       }
     }
-    restoreGroupsFromStorage();  // 恢复用户自定义分组(按URL匹配)
+    libraryLoaded = true;  // 标记图库已成功加载
   } catch (e) { /* 服务器不可用时忽略 */ }
+  // 无论加载成功与否, 都尝试恢复用户自定义分组(按URL匹配)
+  // 这样即使服务器暂时不可用, 分组结构也不会被空数据覆盖
+  restoreGroupsFromStorage();
 }
 
 // 上传图片到指定类型的图库 (本地上传, 存为 dataURL, 不持久化)
@@ -1511,22 +1571,8 @@ function applyConfigData(d) {
   workspace.style.height = d.height + 'px';
   bgImageData = d.bgImage || null;
   elements = d.elements || [];
-  if (d.library) {
-    imageLibrary = {
-      champion: d.library.champion || [],
-      item: d.library.item || [],
-      rune: d.library.rune || [],
-      summoner: d.library.summoner || []
-    };
-  } else {
-    imageLibrary = { champion: [], item: [], rune: [], summoner: [] };
-  }
-  migrateLibrary();
-  const allIds = [];
-  for (const t of ['champion','item','rune','summoner']) {
-    for (const g of imageLibrary[t]) for (const it of g.items) allIds.push(it.id);
-  }
-  libImgId = Math.max(1, ...allIds.map(x=>parseInt(String(x).replace('lib_',''))||0)) + 1;
+  // 注意: 不恢复配置中的 library 分组结构 —— 分组是用户持久化偏好,
+  // 由 localStorage 独立管理, 不应被画布配置覆盖 (否则会丢失用户分组)
   zCounter = elements.reduce((m,e)=>Math.max(m,e.zIndex||0), 10);
   idCounter = elements.length + 1;
   selectedId = null;
@@ -1541,8 +1587,8 @@ function buildConfigData() {
     height: parseInt(document.getElementById('inH').value),
     bgColor: document.getElementById('bgColor').value,
     bgImage: bgImageData,
-    elements,
-    library: imageLibrary
+    elements
+    // 注意: 不保存 library 分组结构 —— 分组由 localStorage 独立持久化管理
   };
 }
 
