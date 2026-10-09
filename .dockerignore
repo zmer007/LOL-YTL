@@ -6,10 +6,6 @@ build/
 .DS_Store
 Thumbs.db
 
-# 图片缓存 (构建时不打包, 运行时挂载卷)
-assets/*
-!assets/.gitkeep
-
 # 编辑器
 .vscode/
 .idea/

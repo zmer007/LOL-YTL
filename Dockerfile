@@ -23,8 +23,11 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /build/server ./build/server
 COPY web/ ./web/
 
-# 创建图片缓存目录
-RUN mkdir -p assets/champions assets/items assets/runes assets/summoners assets/saves build
+# 复制已缓存的官方图片资源 (镜像自带, 开箱即用)
+COPY assets/ ./assets/
+
+# 创建保存目录 (保存的JSON配置)
+RUN mkdir -p assets/saves
 
 EXPOSE 8765
 
