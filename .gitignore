@@ -1,0 +1,17 @@
+# 编译产物
+build/
+tmp/
+*.exe
+
+# 图片缓存 (可选提交, 默认忽略)
+assets/*
+!assets/.gitkeep
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/
+*.swp

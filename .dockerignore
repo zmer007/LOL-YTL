@@ -1,0 +1,19 @@
+# Go 编译产物
+build/
+*.exe
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 图片缓存 (构建时不打包, 运行时挂载卷)
+assets/*
+!assets/.gitkeep
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 临时文件
+server-go-tmp-umask

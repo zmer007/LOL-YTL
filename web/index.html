@@ -1,0 +1,1710 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>英雄联盟一图流 · 拖拽编辑器</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "PingFang SC", "Microsoft YaHei", "Heiti SC", sans-serif; background: #14161c; color: #e8e6e0; overflow: hidden; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* ===== 顶栏 ===== */
+  .topbar { height: 56px; background: linear-gradient(180deg, #1b1e27 0%, #14171e 100%); border-bottom: 1px solid #c8aa6e33; box-shadow: 0 2px 12px rgba(0,0,0,.4); display: flex; align-items: center; padding: 0 16px; gap: 10px; flex-shrink: 0; }
+  .topbar .title { font-weight: 700; color: #c8aa6e; font-size: 17px; margin-right: 2px; white-space: nowrap; text-shadow: 0 1px 4px rgba(200,170,110,.3); letter-spacing: .5px; }
+  .topbar .ver { font-size: 11px; color: #6b7280; background: #1e232e; border: 1px solid #2c3240; border-radius: 4px; padding: 2px 6px; margin-right: 10px; }
+  .topbar .divider { width: 1px; height: 24px; background: #2e3441; margin: 0 4px; }
+  .topbar label { font-size: 13px; color: #9aa0ae; display: flex; align-items: center; gap: 6px; }
+  .topbar input[type=number] { width: 74px; background: #1e222c; border: 1px solid #333844; color: #eee; padding: 5px 8px; border-radius: 6px; font-size: 13px; transition: border-color .15s; }
+  .topbar input[type=number]:focus { outline: none; border-color: #c8aa6e; }
+  .topbar input[type=color] { width: 32px; height: 30px; border: 1px solid #333844; background: #1e222c; border-radius: 6px; cursor: pointer; padding: 2px; }
+  .btn { background: #232833; color: #d8d8de; border: 1px solid #353c4a; padding: 6px 14px; border-radius: 6px; font-size: 13px; transition: all .15s; white-space: nowrap; }
+  .btn:hover { background: #2e3543; border-color: #4a5264; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn.primary { background: linear-gradient(180deg, #d4b578 0%, #c8aa6e 100%); border-color: #c8aa6e; color: #1a1d24; font-weight: 700; box-shadow: 0 2px 8px rgba(200,170,110,.25); }
+  .btn.primary:hover { background: linear-gradient(180deg, #e0c384 0%, #d4b578 100%); box-shadow: 0 3px 12px rgba(200,170,110,.35); }
+  .btn.danger { background: #5a2828; border-color: #7a3535; color: #e8b0b0; }
+  .btn.danger:hover { background: #6e3030; border-color: #8a4040; }
+  .spacer { flex: 1; }
+
+  /* ===== 主体三栏 ===== */
+  .main { display: flex; height: calc(100% - 56px); }
+
+  /* 左侧工具盒 */
+  .toolbox { width: 176px; background: linear-gradient(180deg, #181b23 0%, #14171e 100%); border-right: 1px solid #262b36; padding: 14px 12px; overflow-y: auto; flex-shrink: 0; }
+  .toolbox h3 { font-size: 11px; color: #7d8590; margin-bottom: 12px; letter-spacing: 2px; text-transform: uppercase; }
+  .tool { display: flex; align-items: center; width: 100%; text-align: left; background: #1e232e; border: 1px solid #2c3240; color: #d5d8de; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; transition: all .15s; }
+  .tool:hover { background: #262d3b; border-color: #c8aa6e; color: #fff; transform: translateX(2px); box-shadow: -2px 0 0 #c8aa6e; }
+  .tool .ico { display: inline-flex; width: 24px; height: 24px; margin-right: 8px; align-items: center; justify-content: center; background: #2a3040; border-radius: 5px; font-size: 13px; }
+  .toolbox .hint { font-size: 11px; color: #5c636e; margin-top: 16px; line-height: 1.8; padding: 10px; background: #181c24; border-radius: 6px; border: 1px dashed #2c3240; }
+
+  /* 中间画布区: 溢出时必须可滚动到画布左边缘(flex-start), 空间足够时用 margin:auto 居中 */
+  .canvas-wrap { flex: 1; overflow: auto; background: radial-gradient(ellipse at center, #15181f 0%, #0c0e13 100%); position: relative; padding: 36px; display: flex; align-items: flex-start; justify-content: flex-start; }
+  .canvas-bg { background: repeating-conic-gradient(#191c24 0% 25%, #14171d 0% 50%) 50% / 24px 24px; padding: 0; border-radius: 4px; }
+  #workspace { position: relative; background: #0c0e14; box-shadow: 0 12px 48px rgba(0,0,0,.7), 0 0 0 1px #2a2f3a; border-radius: 2px; flex-shrink: 0; overflow: hidden; margin: 0 auto; }
+  #workspace .bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; z-index: 0; opacity: .55; }
+  #workspace .el { position: absolute; user-select: none; z-index: 1; }
+  #workspace .el.selected { outline: 2px dashed #c8aa6e; outline-offset: 3px; }
+  #workspace .el .resize-handle { position: absolute; width: 12px; height: 12px; background: #c8aa6e; border: 2px solid #14161c; border-radius: 3px; display: none; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  #workspace .el.selected .resize-handle { display: block; }
+  #workspace .el .rh-br { right: -8px; bottom: -8px; cursor: nwse-resize; }
+  #workspace .el .rh-tr { right: -8px; top: -8px; cursor: nesw-resize; }
+  #workspace .el .rh-bl { left: -8px; bottom: -8px; cursor: nesw-resize; }
+  #workspace .el .rh-tl { left: -8px; top: -8px; cursor: nwse-resize; }
+
+  /* 元素: 英雄/装备/符文 */
+  .el-icon .img { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; text-align: center; padding: 2px; overflow: hidden; line-height: 1.1; word-break: break-all; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .el-icon .name { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #ddd; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+
+  /* 元素: 文字 */
+  .el-text { display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px; overflow: hidden; word-break: break-word; }
+
+  /* 元素: 面板 */
+  .el-panel { border-radius: 12px; }
+  .el-panel .ptitle { position: absolute; top: 8px; left: 12px; font-weight: 700; }
+
+  /* ===== 右侧属性面板 ===== */
+  .props { width: 264px; background: linear-gradient(180deg, #181b23 0%, #14171e 100%); border-left: 1px solid #262b36; padding: 16px 14px; overflow-y: auto; flex-shrink: 0; }
+  .props h3 { font-size: 11px; color: #7d8590; margin-bottom: 12px; letter-spacing: 2px; text-transform: uppercase; padding-bottom: 8px; border-bottom: 1px solid #232833; }
+  .prop-row { margin-bottom: 12px; }
+  .prop-row label { display: block; font-size: 12px; color: #9aa0ae; margin-bottom: 5px; }
+  .prop-row input, .prop-row select, .prop-row textarea { width: 100%; background: #1e232e; border: 1px solid #2c3240; color: #eee; padding: 7px 9px; border-radius: 6px; font-size: 13px; font-family: inherit; transition: border-color .15s; }
+  .prop-row input:focus, .prop-row textarea:focus, .prop-row select:focus { outline: none; border-color: #c8aa6e; box-shadow: 0 0 0 2px rgba(200,170,110,.15); }
+  .prop-row input[type=color] { height: 32px; padding: 2px; cursor: pointer; }
+  .prop-row input[type=checkbox] { width: auto; accent-color: #c8aa6e; }
+  .prop-row textarea { resize: vertical; min-height: 54px; }
+  .prop-row .two { display: flex; gap: 8px; }
+  .prop-row .two > * { flex: 1; }
+  .empty-props { color: #4d545f; font-size: 13px; text-align: center; padding: 40px 0; line-height: 1.8; }
+  .align-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .abtn { background: #1e232e; border: 1px solid #2c3240; color: #c8aa6e; padding: 8px 0; border-radius: 6px; cursor: pointer; font-size: 16px; line-height: 1; transition: all .15s; }
+  .abtn:hover { background: #2a3140; border-color: #c8aa6e; }
+  .abtn:active { transform: scale(0.95); }
+  .layer-btns { display: flex; gap: 6px; }
+  .layer-btns .btn { flex: 1; padding: 6px 4px; font-size: 12px; }
+
+  /* 图片库 */
+  .lib-group { margin-bottom: 12px; }
+  .lib-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .lib-head span { font-size: 12px; color: #9aa0ae; }
+  .lib-add, .lib-refresh, .lib-add-grp { padding: 2px 8px !important; font-size: 11px !important; }
+  .lib-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .lib-empty { grid-column: 1/-1; font-size: 11px; color: #5c636e; text-align: center; padding: 10px 0; background: #181c24; border-radius: 5px; border: 1px dashed #2c3240; }
+  .lib-item { position: relative; aspect-ratio: 1; border-radius: 5px; overflow: hidden; cursor: pointer; border: 2px solid #2c3240; transition: all .15s; background: #1e232e; }
+  .lib-item:hover { border-color: #c8aa6e; transform: scale(1.05); }
+  .lib-item.lib-item-active { border-color: #c8aa6e; box-shadow: 0 0 0 2px rgba(200,170,110,.4); }
+  .lib-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lib-del { position: absolute; top: 1px; right: 1px; width: 15px; height: 15px; background: rgba(138,50,50,.9); color: #fff; border-radius: 50%; font-size: 11px; line-height: 15px; text-align: center; opacity: 0; transition: opacity .15s; }
+  .lib-item:hover .lib-del { opacity: 1; }
+  .lib-del:hover { background: #c0392b; }
+
+  /* ===== 分组 ===== */
+  .lib-type { margin-bottom: 14px; }
+  .lib-type-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px solid #232833; }
+  .lib-type-head .tname { font-size: 12px; color: #c8aa6e; font-weight: 600; }
+  .lib-type-head .tactions { display: flex; gap: 4px; }
+  .lib-type-head .btn { padding: 2px 8px !important; font-size: 11px !important; }
+
+  .grp { margin-bottom: 8px; border: 1px solid #232833; border-radius: 6px; overflow: hidden; background: #161a22; }
+  .grp-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; background: #1b2030; transition: background .15s; user-select: none; }
+  .grp-head:hover { background: #232a3c; }
+  .grp-arrow { display: inline-block; width: 12px; font-size: 10px; color: #7d8590; transition: transform .2s; flex-shrink: 0; }
+  .grp.collapsed .grp-arrow { transform: rotate(-90deg); }
+  .grp-name { flex: 1; font-size: 12px; color: #d5d8de; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grp-name[contenteditable="true"] { outline: 1px solid #c8aa6e; background: #0f1218; border-radius: 3px; padding: 1px 4px; cursor: text; }
+  .grp-count { font-size: 10px; color: #6b7280; background: #0f1218; padding: 1px 6px; border-radius: 8px; }
+  .grp-del { background: none; border: none; color: #6b7280; font-size: 14px; cursor: pointer; padding: 0 2px; line-height: 1; transition: color .15s; }
+  .grp-del:hover { color: #e88; }
+  .grp-body { padding: 8px; }
+  .grp.collapsed .grp-body { display: none; }
+  .grp-body .lib-grid { margin: 0; }
+  .grp-drop-active { outline: 2px dashed #c8aa6e; outline-offset: -2px; }
+  .lib-item.dragging { opacity: 0.4; }
+  .lib-item { position: relative; }
+  .lib-item .lib-name-tip { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.7); color: #ddd; font-size: 9px; text-align: center; padding: 1px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .15s; }
+  .lib-item:hover .lib-name-tip { opacity: 1; }
+
+  /* ===== 图片库管理弹窗 ===== */
+  .lib-modal { position: fixed; inset: 0; z-index: 10000; display: none; }
+  .lib-modal.show { display: flex; align-items: center; justify-content: center; }
+  .lib-modal-mask { position: absolute; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(2px); }
+  .lib-modal-panel { position: relative; width: 92vw; max-width: 1180px; height: 86vh; background: #14171e; border: 1px solid #c8aa6e55; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.7); display: flex; flex-direction: column; }
+  .lib-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid #232833; flex-shrink: 0; }
+  .lib-modal-title { font-size: 16px; font-weight: 700; color: #c8aa6e; }
+  .lib-modal-close { background: none; border: none; color: #9aa0ae; font-size: 26px; cursor: pointer; line-height: 1; width: 30px; height: 30px; border-radius: 6px; transition: all .15s; }
+  .lib-modal-close:hover { color: #fff; background: #2a3040; }
+  .lib-modal-body { flex: 1; overflow-y: auto; padding: 18px 22px; }
+  /* 弹窗内图库更宽: 自适应列数, 图标更大 */
+  .lib-modal-body .lib-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px; }
+  .lib-modal-body .lib-item:hover .lib-name-tip { opacity: 1; }
+  .lib-modal-body .lib-name-tip { font-size: 10px; padding: 2px; }
+  .lib-modal-body .grp-body { padding: 12px; }
+  .lib-modal-body .lib-empty { padding: 16px 0; }
+
+  /* ===== 右键菜单 ===== */
+  .ctx-menu { position: fixed; z-index: 20000; background: #1e232e; border: 1px solid #353c4a; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.6); padding: 6px 0; min-width: 180px; display: none; }
+  .ctx-menu.show { display: block; }
+  .ctx-item { position: relative; padding: 8px 14px; font-size: 13px; color: #d5d8de; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+  .ctx-item:hover { background: #2a3040; color: #fff; }
+  .ctx-item .arrow { color: #7d8590; font-size: 10px; margin-left: 10px; }
+  .ctx-divider { height: 1px; background: #2c3240; margin: 4px 0; }
+  .ctx-submenu { position: absolute; left: 100%; top: -6px; background: #1e232e; border: 1px solid #353c4a; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.6); padding: 6px 0; min-width: 170px; display: none; }
+  .ctx-item.has-sub:hover .ctx-submenu { display: block; }
+  .ctx-sub-item { padding: 7px 14px; font-size: 12px; color: #d5d8de; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .ctx-sub-item:hover { background: #2a3040; color: #c8aa6e; }
+  .ctx-sub-item.disabled { color: #5c636e; cursor: not-allowed; }
+  .ctx-sub-item.disabled:hover { background: transparent; color: #5c636e; }
+  .ctx-sub-item .cnt { color: #6b7280; font-size: 11px; }
+
+  /* 提示 */
+  .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(10px); background: #1e232e; color: #c8aa6e; border: 1px solid #c8aa6e55; padding: 10px 22px; border-radius: 8px; font-size: 13px; font-weight: 600; z-index: 9999; opacity: 0; transition: all .25s; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2e3441; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #c8aa6e66; }
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <span class="title">⚔ 一图流编辑器</span>
+  <span class="ver" title="若非此版本请硬刷新 (Cmd+Shift+R)">v3.0</span>
+  <label>宽 <input type="number" id="inW" value="1920" min="200"></label>
+  <label>高 <input type="number" id="inH" value="1080" min="200"></label>
+  <button class="btn" id="btnApplySize">应用尺寸</button>
+  <span class="divider"></span>
+  <label>版本 <input type="text" id="inVersion" value="16.10.1" style="width:84px" title="Data Dragon 版本号"></label>
+  <span class="divider"></span>
+  <label>背景色 <input type="color" id="bgColor" value="#0c0e14"></label>
+  <button class="btn" id="btnBgImg">背景图</button>
+  <button class="btn" id="btnClearBg">清背景</button>
+  <div class="spacer"></div>
+  <button class="btn" id="btnSave">保存JSON</button>
+  <button class="btn" id="btnLoad">加载JSON</button>
+  <button class="btn" id="btnCache" title="从官网拉取全部英雄头像/装备/符文图标到图库">缓存官方资源</button>
+  <span class="divider"></span>
+  <button class="btn primary" id="btnExport">导出PNG</button>
+  <button class="btn primary" id="btnCopy">复制图片</button>
+</div>
+
+<div class="main">
+  <!-- 左侧工具盒 -->
+  <div class="toolbox">
+    <h3>添加元素</h3>
+    <button class="tool" data-type="champion"><span class="ico">🛡</span>英雄头像</button>
+    <button class="tool" data-type="item"><span class="ico">⚔</span>装备图标</button>
+    <button class="tool" data-type="rune"><span class="ico">✦</span>符文图标</button>
+    <button class="tool" data-type="summoner"><span class="ico">⚡</span>召唤师技能</button>
+    <button class="tool" data-type="panel"><span class="ico">▢</span>分区面板</button>
+    <div class="hint">
+      · 点击工具选择图库<br>
+      · 双击画布添加文字<br>
+      · 拖动元素调整位置<br>
+      · 拖动角点调整大小<br>
+      · 选中后在右侧编辑<br>
+      · Delete 键删除
+    </div>
+
+    <h3 style="margin-top:18px">图片库</h3>
+    <button class="tool" id="btnOpenLibrary"><span class="ico">📂</span>打开图片库</button>
+  </div>
+
+  <!-- 中间画布 -->
+  <div class="canvas-wrap">
+    <div class="canvas-bg">
+      <div id="workspace" style="width:1920px;height:1080px;"></div>
+    </div>
+  </div>
+
+  <!-- 右侧属性 -->
+  <div class="props" id="props">
+    <h3>属性</h3>
+    <div class="empty-props">未选中元素<br>点击画布中的元素进行编辑</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileLoader" accept="application/json" style="display:none">
+<input type="file" id="imgLoader" accept="image/*" style="display:none">
+
+<!-- 图片库管理弹窗 -->
+<div class="lib-modal" id="libModal">
+  <div class="lib-modal-mask" id="libModalMask"></div>
+  <div class="lib-modal-panel">
+    <div class="lib-modal-head">
+      <span class="lib-modal-title">📂 图片库管理</span>
+      <button class="lib-modal-close" id="libModalClose" title="关闭 (Esc)">×</button>
+    </div>
+    <div class="lib-modal-body" id="libraryBox"></div>
+  </div>
+</div>
+
+<!-- 右键菜单 -->
+<div class="ctx-menu" id="ctxMenu"></div>
+
+<script>
+// ============================================================
+//  状态
+// ============================================================
+const workspace = document.getElementById('workspace');
+const props = document.getElementById('props');
+let elements = [];          // {id,type,x,y,w,h,...rest}
+let selectedId = null;       // 主选中元素
+let selectedIds = [];        // 多选数组 (包含 selectedId)
+let zCounter = 10;
+let idCounter = 1;
+let bgImageData = null;     // dataURL
+// 图片库: 按类型分组, 每类下有多个分组, 每个分组含 items
+// imageLibrary = { champion: [group, ...], item: [...], rune: [...] }
+// group = { id, name, collapsed, items: [{id, name, url}] }
+let imageLibrary = { champion: [], item: [], rune: [], summoner: [] };
+let libImgId = 1;
+let grpId = 1;
+const DEFAULT_GROUP_NAME = '全部';   // 默认分组名(存放所有官方图片, 不可删除单图)
+
+// 生成一个新分组
+function newGroup(name) {
+  return { id: 'grp_' + (grpId++), name: name || DEFAULT_GROUP_NAME, collapsed: false, items: [] };
+}
+// 确保某类型至少有一个分组
+function ensureGroups(type) {
+  if (!Array.isArray(imageLibrary[type]) || imageLibrary[type].length === 0) {
+    imageLibrary[type] = [newGroup(DEFAULT_GROUP_NAME)];
+  }
+}
+// 迁移旧格式(扁平数组)到分组格式
+function migrateLibrary() {
+  for (const t of ['champion', 'item', 'rune', 'summoner']) {
+    if (!Array.isArray(imageLibrary[t])) {
+      imageLibrary[t] = [newGroup(DEFAULT_GROUP_NAME)];
+    } else if (imageLibrary[t].length > 0 && !imageLibrary[t][0].items) {
+      // 旧格式: 直接是 items 数组
+      const items = imageLibrary[t];
+      imageLibrary[t] = [newGroup(DEFAULT_GROUP_NAME)];
+      imageLibrary[t][0].items = items;
+    }
+    // 同步 grpId, 并兼容旧默认组名"默认"→"全部"
+    for (const g of imageLibrary[t]) {
+      if (g.name === '默认') g.name = DEFAULT_GROUP_NAME;
+      const n = parseInt(String(g.id || '').replace('grp_', '')) || 0;
+      if (n >= grpId) grpId = n + 1;
+    }
+  }
+}
+// 获取某类型所有图片(扁平化)
+function allItems(type) {
+  ensureGroups(type);
+  return imageLibrary[type].flatMap(g => g.items);
+}
+// 按 id 查找图片及所在分组
+function findItem(type, id) {
+  ensureGroups(type);
+  for (const g of imageLibrary[type]) {
+    const idx = g.items.findIndex(x => x.id === id);
+    if (idx >= 0) return { group: g, item: g.items[idx], index: idx };
+  }
+  return null;
+}
+
+// ============================================================
+//  工具函数
+// ============================================================
+function uid() { return 'el_' + (idCounter++); }
+function randColor(seed) {
+  let h = 0; for (const c of (seed||'x')) h = (h*131 + c.charCodeAt(0)) & 0xffffffff;
+  const r = 40 + (h>>16)%160, g = 40 + (h>>8)%160, b = 40 + h%160;
+  return `rgb(${r},${g},${b})`;
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+// ============================================================
+//  添加元素
+// ============================================================
+document.querySelectorAll('.tool[data-type]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.type;
+    if (type === 'text' || type === 'panel') {
+      addElement(type);
+    } else {
+      // 图片类: 显示图库选择器, 通过拖拽创建元素
+      showLibraryPicker(type);
+    }
+  });
+});
+
+function addElement(type) {
+  if (!['champion','item','rune','summoner','text','panel'].includes(type)) return;
+  const rect = workspace.getBoundingClientRect();
+  const cx = Math.round(rect.width / 2);
+  const cy = Math.round(rect.height / 2);
+  let el;
+  if (type === 'champion') {
+    el = { id: uid(), type, x: 8, y: 8, w: 56, h: 56, name: '英雄', color: randColor(type+idCounter), image: null, border: '#782828' };
+  } else if (type === 'item') {
+    el = { id: uid(), type, x: 8, y: 8, w: 44, h: 44, name: '装备', color: randColor(type+idCounter), image: null, border: '#505064' };
+  } else if (type === 'rune') {
+    el = { id: uid(), type, x: 8, y: 8, w: 40, h: 40, name: '符文', color: randColor(type+idCounter), image: null, border: '#7858a0' };
+  } else if (type === 'summoner') {
+    el = { id: uid(), type, x: 8, y: 8, w: 44, h: 44, name: '召唤师技能', color: randColor(type+idCounter), image: null, border: '#2a6a4a' };
+  } else if (type === 'text') {
+    el = { id: uid(), type, x: cx-80, y: cy-14, w: 160, h: 28, text: '文字内容', fontSize: 16, color: '#e6e6e6', bold: false, bg: 'transparent' };
+  } else if (type === 'panel') {
+    el = { id: uid(), type, x: 8, y: 8, w: 260, h: 140, title: '分区标题', bg: 'rgba(20,24,36,0.85)', border: '#505a78', titleColor: '#c89b3c' };
+  }
+  el.zIndex = ++zCounter;
+  elements.push(el);
+  render();
+  select(el.id);
+}
+
+// ============================================================
+//  渲染
+// ============================================================
+function render() {
+  // 背景
+  workspace.style.background = document.getElementById('bgColor').value;
+  const oldBg = workspace.querySelector('.bg-img');
+  if (oldBg) oldBg.remove();
+  if (bgImageData) {
+    const img = document.createElement('img');
+    img.className = 'bg-img';
+    img.src = bgImageData;
+    workspace.appendChild(img);
+  }
+  // 清空旧元素(保留背景)
+  workspace.querySelectorAll('.el').forEach(n => n.remove());
+  for (const e of elements) {
+    const node = buildNode(e);
+    workspace.appendChild(node);
+  }
+}
+
+function buildNode(e) {
+  const d = document.createElement('div');
+  d.className = 'el el-' + e.type;
+  d.dataset.id = e.id;
+  d.style.left = e.x + 'px';
+  d.style.top = e.y + 'px';
+  d.style.width = e.w + 'px';
+  d.style.height = e.h + 'px';
+  d.style.zIndex = e.type === 'panel' ? 1 : Math.max(2, e.zIndex);
+  if (selectedIds.includes(e.id)) d.classList.add('selected');
+
+  if (e.type === 'champion' || e.type === 'item' || e.type === 'rune' || e.type === 'summoner') {
+    d.style.background = e.color;
+    d.style.border = `1px solid ${e.border}`;
+    if (e.image) {
+      d.style.background = `url(${e.image}) center/cover no-repeat`;
+    }
+    // 无图片时只显示纯色占位块, 不显示任何文字
+  } else if (e.type === 'text') {
+    d.classList.add('el-text');
+    d.style.fontSize = e.fontSize + 'px';
+    d.style.color = e.color;
+    d.style.fontWeight = e.bold ? '700' : '400';
+    if (e.bg && e.bg !== 'transparent') d.style.background = e.bg;
+    d.textContent = e.text || '';
+  } else if (e.type === 'panel') {
+    d.classList.add('el-panel');
+    d.style.background = e.bg;
+    d.style.border = `1px solid ${e.border}`;
+    const t = document.createElement('div');
+    t.className = 'ptitle';
+    t.style.color = e.titleColor;
+    t.style.fontSize = Math.max(12, Math.round(e.h * 0.14)) + 'px';
+    t.textContent = e.title || '';
+    d.appendChild(t);
+  }
+
+  // 缩放手柄
+  ['tl','tr','bl','br'].forEach(pos => {
+    const h = document.createElement('div');
+    h.className = 'resize-handle rh-' + pos;
+    h.dataset.handle = pos;
+    d.appendChild(h);
+  });
+  return d;
+}
+
+// ============================================================
+//  选中
+// ============================================================
+function select(id) {
+  selectedId = id;
+  selectedIds = id ? [id] : [];
+  workspace.querySelectorAll('.el').forEach(n => {
+    n.classList.toggle('selected', selectedIds.includes(n.dataset.id));
+  });
+  renderProps();
+}
+
+// 设置多选
+function setSelectedIds(ids) {
+  selectedIds = ids.slice();
+  selectedId = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null;
+  workspace.querySelectorAll('.el').forEach(n => {
+    n.classList.toggle('selected', selectedIds.includes(n.dataset.id));
+  });
+  renderProps();
+}
+// 框选状态
+let marquee = null; // { startX, startY, curX, curY, active }
+const marqueeEl = document.createElement('div');
+marqueeEl.style.cssText = 'position:absolute;border:1px dashed #c8aa6e;background:rgba(200,170,110,0.08);pointer-events:none;z-index:99997;display:none';
+workspace.appendChild(marqueeEl);
+
+workspace.addEventListener('mousedown', (ev) => {
+  if (!(ev.target === workspace || ev.target.classList.contains('bg-img'))) return;
+  if (ev.button !== 0) return;
+  const rect = workspace.getBoundingClientRect();
+  marquee = {
+    startX: ev.clientX - rect.left,
+    startY: ev.clientY - rect.top,
+    curX: ev.clientX - rect.left,
+    curY: ev.clientY - rect.top,
+    active: false
+  };
+  marqueeEl.style.display = 'none';
+  ev.preventDefault();
+});
+
+// 双击画布空白处添加文字标签
+workspace.addEventListener('dblclick', (ev) => {
+  if (!(ev.target === workspace || ev.target.classList.contains('bg-img'))) return;
+  const rect = workspace.getBoundingClientRect();
+  const w = 160, h = 28;
+  const x = Math.round(ev.clientX - rect.left - w / 2);
+  const y = Math.round(ev.clientY - rect.top - h / 2);
+  const el = {
+    id: uid(), type: 'text', x, y, w, h,
+    text: '文字内容', fontSize: 16, color: '#e6e6e6', bold: false, bg: 'transparent',
+    zIndex: ++zCounter
+  };
+  elements.push(el);
+  render();
+  select(el.id);
+});
+
+// 从属性面板图库拖拽到画布: 创建新元素
+workspace.addEventListener('dragover', (ev) => {
+  if (dragItemData && dragItemData.mode === 'create') {
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'copy';
+  }
+});
+workspace.addEventListener('drop', (ev) => {
+  if (!dragItemData || dragItemData.mode !== 'create') return;
+  ev.preventDefault();
+  const { type, itemId } = dragItemData;
+  const libItem = allItems(type).find(x => x.id === itemId);
+  if (!libItem) return;
+  const rect = workspace.getBoundingClientRect();
+  // 元素默认尺寸
+  const sizes = { champion: { w: 56, h: 56, border: '#782828' }, item: { w: 44, h: 44, border: '#505064' }, rune: { w: 40, h: 40, border: '#7858a0' }, summoner: { w: 44, h: 44, border: '#2a6a4a' } };
+  const s = sizes[type] || { w: 44, h: 44, border: '#505064' };
+  const x = Math.round(ev.clientX - rect.left - s.w / 2);
+  const y = Math.round(ev.clientY - rect.top - s.h / 2);
+  const el = {
+    id: uid(), type, x, y, w: s.w, h: s.h,
+    name: '', color: randColor(type + idCounter),
+    image: libItem.url, border: s.border, zIndex: ++zCounter
+  };
+  elements.push(el);
+  render();
+  select(el.id);
+  toast(`已添加 ${libItem.name}`);
+});
+
+// ============================================================
+//  拖拽移动 + 缩放
+// ============================================================
+let dragState = null;
+workspace.addEventListener('mousedown', (ev) => {
+  const node = ev.target.closest('.el');
+  if (!node) return;
+  const id = node.dataset.id;
+  const el = elements.find(x => x.id === id);
+  if (!el) return;
+
+  if (ev.target.classList.contains('resize-handle')) {
+    // 缩放
+    const handle = ev.target.dataset.handle;
+    dragState = { mode: 'resize', id, handle, startX: ev.clientX, startY: ev.clientY, orig: {...el} };
+  } else {
+    // 移动
+    // 若点击的是已多选的元素之一，保持多选；否则单选
+    if (!selectedIds.includes(id)) {
+      select(id);
+    }
+    // 记录所有选中元素的初始位置（用于批量移动）
+    const origMap = {};
+    for (const sid of selectedIds) {
+      const se = elements.find(x => x.id === sid);
+      if (se) origMap[sid] = { x: se.x, y: se.y };
+    }
+    dragState = { mode: 'move', id, startX: ev.clientX, startY: ev.clientY, orig: {...el}, origMap };
+  }
+  ev.preventDefault();
+});
+
+// 拖拽坐标提示浮层
+const coordTip = document.createElement('div');
+coordTip.style.cssText = 'position:fixed;z-index:99998;background:#1e232e;border:1px solid #c8aa6e;color:#c8aa6e;font-size:12px;padding:3px 8px;border-radius:4px;pointer-events:none;display:none;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.5)';
+document.body.appendChild(coordTip);
+
+document.addEventListener('mousemove', (ev) => {
+  if (!dragState) return;
+  const el = elements.find(x => x.id === dragState.id);
+  if (!el) return;
+  const dx = ev.clientX - dragState.startX;
+  const dy = ev.clientY - dragState.startY;
+  if (dragState.mode === 'move') {
+    el.x = dragState.orig.x + dx;
+    el.y = dragState.orig.y + dy;
+    // 批量移动：所有选中元素一起移动
+    if (dragState.origMap) {
+      for (const sid of Object.keys(dragState.origMap)) {
+        if (sid === el.id) continue;
+        const se = elements.find(x => x.id === sid);
+        if (se) {
+          se.x = dragState.origMap[sid].x + dx;
+          se.y = dragState.origMap[sid].y + dy;
+          const snode = workspace.querySelector(`.el[data-id="${sid}"]`);
+          if (snode) {
+            snode.style.left = se.x + 'px';
+            snode.style.top = se.y + 'px';
+          }
+        }
+      }
+    }
+  } else {
+    const h = dragState.handle;
+    let nx = dragState.orig.x, ny = dragState.orig.y, nw = dragState.orig.w, nh = dragState.orig.h;
+    if (h.includes('r')) nw = Math.max(20, dragState.orig.w + dx);
+    if (h.includes('b')) nh = Math.max(20, dragState.orig.h + dy);
+    if (h.includes('l')) { nw = Math.max(20, dragState.orig.w - dx); nx = dragState.orig.x + (dragState.orig.w - nw); }
+    if (h.includes('t')) { nh = Math.max(20, dragState.orig.h - dy); ny = dragState.orig.y + (dragState.orig.h - nh); }
+    Object.assign(el, { x:nx, y:ny, w:nw, h:nh });
+  }
+  const node = workspace.querySelector(`.el[data-id="${el.id}"]`);
+  if (node) {
+    node.style.left = el.x+'px'; node.style.top = el.y+'px';
+    node.style.width = el.w+'px'; node.style.height = el.h+'px';
+  }
+  if (selectedId === el.id) renderProps();
+  // 显示实时坐标
+  if (selectedIds.length > 1) {
+    coordTip.textContent = `已选 ${selectedIds.length} 个  X: ${Math.round(el.x)}  Y: ${Math.round(el.y)}`;
+  } else {
+    coordTip.textContent = `X: ${Math.round(el.x)}  Y: ${Math.round(el.y)}`;
+  }
+  coordTip.style.display = 'block';
+  coordTip.style.left = (ev.clientX + 14) + 'px';
+  coordTip.style.top = (ev.clientY - 30) + 'px';
+});
+
+document.addEventListener('mouseup', () => {
+  dragState = null;
+  coordTip.style.display = 'none';
+});
+
+// 框选：鼠标移动
+document.addEventListener('mousemove', (ev) => {
+  if (!marquee) return;
+  const rect = workspace.getBoundingClientRect();
+  const cx = ev.clientX - rect.left;
+  const cy = ev.clientY - rect.top;
+  const dx = Math.abs(cx - marquee.startX);
+  const dy = Math.abs(cy - marquee.startY);
+  // 超过3像素才激活框选，避免误触
+  if (!marquee.active && (dx > 3 || dy > 3)) {
+    marquee.active = true;
+    marqueeEl.style.display = 'block';
+  }
+  if (marquee.active) {
+    marquee.curX = cx;
+    marquee.curY = cy;
+    const x = Math.min(marquee.startX, cx);
+    const y = Math.min(marquee.startY, cy);
+    const w = Math.abs(cx - marquee.startX);
+    const h = Math.abs(cy - marquee.startY);
+    marqueeEl.style.left = x + 'px';
+    marqueeEl.style.top = y + 'px';
+    marqueeEl.style.width = w + 'px';
+    marqueeEl.style.height = h + 'px';
+    // 实时高亮框内元素
+    const ids = getElementsInRect(x, y, x + w, y + h);
+    selectedIds = ids;
+    selectedId = ids.length > 0 ? ids[ids.length - 1] : null;
+    workspace.querySelectorAll('.el').forEach(n => {
+      n.classList.toggle('selected', selectedIds.includes(n.dataset.id));
+    });
+  }
+});
+
+// 框选：鼠标抬起
+document.addEventListener('mouseup', () => {
+  if (!marquee) return;
+  if (marquee.active) {
+    const x = Math.min(marquee.startX, marquee.curX);
+    const y = Math.min(marquee.startY, marquee.curY);
+    const w = Math.abs(marquee.curX - marquee.startX);
+    const h = Math.abs(marquee.curY - marquee.startY);
+    const ids = getElementsInRect(x, y, x + w, y + h);
+    setSelectedIds(ids);
+  } else {
+    // 单击空白：清除选择
+    select(null);
+  }
+  marqueeEl.style.display = 'none';
+  marquee = null;
+});
+
+// 获取矩形区域内的元素 id
+function getElementsInRect(x1, y1, x2, y2) {
+  const ids = [];
+  for (const e of elements) {
+    if (e.type === 'panel') continue; // 分区面板不参与框选
+    const ex1 = e.x, ey1 = e.y, ex2 = e.x + e.w, ey2 = e.y + e.h;
+    // 中心在矩形内即算选中
+    const cex = ex1 + e.w / 2, cey = ey1 + e.h / 2;
+    if (cex >= x1 && cex <= x2 && cey >= y1 && cey <= y2) {
+      ids.push(e.id);
+    }
+  }
+  return ids;
+}
+
+// 对齐/分布多个选中元素
+function alignElements(mode) {
+  const els = elements.filter(x => selectedIds.includes(x.id));
+  if (els.length < 2) return;
+  // 计算所有元素的边界
+  const minX = Math.min(...els.map(e => e.x));
+  const maxX = Math.max(...els.map(e => e.x + e.w));
+  const minY = Math.min(...els.map(e => e.y));
+  const maxY = Math.max(...els.map(e => e.y + e.h));
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+
+  switch (mode) {
+    case 'left':    els.forEach(e => e.x = minX); break;
+    case 'hcenter': els.forEach(e => e.x = centerX - e.w / 2); break;
+    case 'right':   els.forEach(e => e.x = maxX - e.w); break;
+    case 'top':     els.forEach(e => e.y = minY); break;
+    case 'vcenter': els.forEach(e => e.y = centerY - e.h / 2); break;
+    case 'bottom':  els.forEach(e => e.y = maxY - e.h); break;
+    case 'hdist': {
+      // 水平平均分布：按当前 x 排序，首尾不动，中间均匀分布
+      const sorted = els.slice().sort((a, b) => a.x - b.x);
+      const totalW = sorted.reduce((s, e) => s + e.w, 0);
+      const span = (sorted[sorted.length - 1].x + sorted[sorted.length - 1].w) - sorted[0].x;
+      const gap = (span - totalW) / (sorted.length - 1);
+      let cx = sorted[0].x;
+      for (const e of sorted) {
+        e.x = Math.round(cx);
+        cx += e.w + gap;
+      }
+      break;
+    }
+    case 'vdist': {
+      // 垂直平均分布
+      const sorted = els.slice().sort((a, b) => a.y - b.y);
+      const totalH = sorted.reduce((s, e) => s + e.h, 0);
+      const span = (sorted[sorted.length - 1].y + sorted[sorted.length - 1].h) - sorted[0].y;
+      const gap = (span - totalH) / (sorted.length - 1);
+      let cy = sorted[0].y;
+      for (const e of sorted) {
+        e.y = Math.round(cy);
+        cy += e.h + gap;
+      }
+      break;
+    }
+  }
+  render();
+  renderProps();
+}
+
+// 键盘删除
+document.addEventListener('keydown', (ev) => {
+  if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedIds.length > 0) {
+    const tag = ev.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    elements = elements.filter(x => !selectedIds.includes(x.id));
+    selectedIds = [];
+    selectedId = null;
+    render();
+    renderProps();
+    ev.preventDefault();
+  }
+});
+
+// ============================================================
+//  属性面板
+// ============================================================
+// 渲染图库网格 HTML (供属性面板和图库选择器复用)
+function renderLibraryGridHTML(type, activeUrl) {
+  ensureGroups(type);
+  const groups = imageLibrary[type] || [];
+  const totalCount = groups.reduce((s, g) => s + g.items.length, 0);
+  if (totalCount === 0) {
+    return '<div class="lib-empty">图库暂无图片, 请先点击顶部「缓存官方资源」</div>';
+  }
+  let grid = '';
+  for (const g of groups) {
+    if (g.items.length === 0) continue;
+    const collapsedCls = g.collapsed ? 'collapsed' : '';
+    grid += `<div class="grp ${collapsedCls}" data-grp="${g.id}">
+      <div class="grp-head">
+        <span class="grp-arrow">▼</span>
+        <span class="grp-name">${esc(g.name)}</span>
+        <span class="grp-count">${g.items.length}</span>
+      </div>
+      <div class="grp-body"><div class="lib-grid">`;
+    for (const it of g.items) {
+      const active = activeUrl && it.url === activeUrl ? 'lib-item-active' : '';
+      grid += `<div class="lib-item lib-apply ${active}" data-id="${it.id}" data-type="${type}" draggable="true" title="${esc(it.name)} - 点击应用, 拖拽到画布创建新元素"><img src="${it.url}" alt=""></div>`;
+    }
+    grid += `</div></div></div>`;
+  }
+  return grid;
+}
+
+// 显示图库选择器 (点击工具按钮时调用, 不添加元素, 仅展示可拖拽的图库)
+let pickerType = null;
+function showLibraryPicker(type) {
+  pickerType = type;
+  selectedId = null;
+  selectedIds = [];
+  const grid = renderLibraryGridHTML(type, null);
+  props.innerHTML = `<h3>选择 ${typeLabel(type)}</h3>
+    <div class="lib-empty" style="margin-bottom:10px">拖拽图片到画布即可创建元素</div>
+    ${row('图库', grid)}`;
+  bindPicker();
+}
+
+function bindPicker() {
+  const type = pickerType;
+  // 拖拽到画布创建新元素
+  props.querySelectorAll('.lib-apply').forEach(item => {
+    item.ondragstart = (ev) => {
+      dragItemData = { mode: 'create', type, itemId: item.dataset.id };
+      item.classList.add('dragging');
+      ev.dataTransfer.effectAllowed = 'copy';
+      ev.dataTransfer.setData('text/plain', item.dataset.id);
+    };
+    item.ondragend = () => {
+      item.classList.remove('dragging');
+      dragItemData = null;
+    };
+  });
+  // 分组折叠
+  props.querySelectorAll('.grp-head').forEach(head => {
+    head.onclick = () => {
+      const grpEl = head.parentElement;
+      const grpId = grpEl.dataset.grp;
+      const g = (imageLibrary[type] || []).find(x => x.id === grpId);
+      if (g) {
+        g.collapsed = !g.collapsed;
+        grpEl.classList.toggle('collapsed', g.collapsed);
+        saveGroupsToStorage();
+      }
+    };
+  });
+}
+
+function renderProps() {
+  // 多选模式：显示对齐工具栏
+  if (selectedIds.length > 1) {
+    const selEls = elements.filter(x => selectedIds.includes(x.id));
+    let html = `<h3>多选 · ${selectedIds.length} 个元素</h3>`;
+    html += '<h3 style="margin-top:8px">对齐</h3>';
+    html += `<div class="align-bar">
+      <button class="abtn" title="左对齐" data-align="left">⟸</button>
+      <button class="abtn" title="水平居中" data-align="hcenter">↔</button>
+      <button class="abtn" title="右对齐" data-align="right">⟹</button>
+      <button class="abtn" title="顶对齐" data-align="top">⇑</button>
+      <button class="abtn" title="垂直居中" data-align="vcenter">↕</button>
+      <button class="abtn" title="底对齐" data-align="bottom">⇓</button>
+      <button class="abtn" title="水平平均分布" data-align="hdist">⇔</button>
+      <button class="abtn" title="垂直平均分布" data-align="vdist">⇕</button>
+    </div>`;
+    html += `<div style="margin-top:10px"><button class="btn danger" id="p_mdel" style="width:100%">删除选中的 ${selectedIds.length} 个元素</button></div>`;
+    props.innerHTML = html;
+    props.querySelectorAll('.abtn').forEach(btn => {
+      btn.onclick = () => { alignElements(btn.dataset.align); };
+    });
+    const mdel = document.getElementById('p_mdel');
+    if (mdel) mdel.onclick = () => {
+      elements = elements.filter(x => !selectedIds.includes(x.id));
+      selectedIds = []; selectedId = null; render(); renderProps();
+    };
+    return;
+  }
+
+  const e = elements.find(x => x.id === selectedId);
+  if (!e) {
+    props.innerHTML = '<h3>属性</h3><div class="empty-props">未选中元素<br>点击画布中的元素进行编辑</div>';
+    return;
+  }
+  let html = '<h3>属性 · ' + typeLabel(e.type) + '</h3>';
+
+  if (e.type === 'champion' || e.type === 'item' || e.type === 'rune' || e.type === 'summoner') {
+    const grid = renderLibraryGridHTML(e.type, e.image);
+    html += row('图库选择', grid);
+    html += row('边框色', `<input type="color" id="p_border" value="${e.border}">`);
+  } else if (e.type === 'text') {
+    html += row('文字', `<textarea id="p_text">${esc(e.text||'')}</textarea>`);
+    html += row('字号', `<input type="number" id="p_fontsize" value="${e.fontSize}" min="8" max="200">`);
+    html += row('颜色', `<input type="color" id="p_color" value="${e.color}">`);
+    html += row('', `<label style="font-size:12px;color:#aaa"><input type="checkbox" id="p_bold" ${e.bold?'checked':''}> 加粗</label>`);
+    html += row('背景', `<input type="text" id="p_bg" value="${e.bg}" placeholder="transparent 或 #rrggbb">`);
+  } else if (e.type === 'panel') {
+    html += row('标题', `<input id="p_title" value="${esc(e.title||'')}">`);
+    html += row('填充', `<input type="text" id="p_bg" value="${e.bg}">`);
+    html += row('边框色', `<input type="color" id="p_border" value="${e.border}">`);
+    html += row('标题色', `<input type="color" id="p_titlecolor" value="${e.titleColor}">`);
+  }
+
+  // 通用: 坐标尺寸
+  html += '<h3 style="margin-top:16px">几何</h3>';
+  html += `<div class="prop-row"><div class="two">
+    <label>X<input type="number" id="p_x" value="${Math.round(e.x)}"></label>
+    <label>Y<input type="number" id="p_y" value="${Math.round(e.y)}"></label>
+  </div></div>`;
+  html += `<div class="prop-row"><div class="two">
+    <label>宽<input type="number" id="p_w" value="${Math.round(e.w)}"></label>
+    <label>高<input type="number" id="p_h" value="${Math.round(e.h)}"></label>
+  </div></div>`;
+
+  props.innerHTML = html;
+  bindProps(e);
+}
+
+function typeLabel(t){ return {champion:'英雄',item:'装备',rune:'符文',summoner:'召唤师技能',text:'文字',panel:'面板'}[t]||t; }
+function row(label, inner){ return `<div class="prop-row">${label?`<label>${label}</label>`:''}${inner}</div>`; }
+function esc(s){ return String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function bindProps(e) {
+  // 仅更新画布，不重建属性面板，避免输入框失焦
+  const upd = (patch) => { Object.assign(e, patch); render(); };
+  const bind = (id, key, parse = v=>v) => {
+    const n = document.getElementById(id);
+    if (n) n.addEventListener('input', () => upd({[key]: parse(n.value)}));
+  };
+  bind('p_title','title');
+  bind('p_text','text');
+  bind('p_fontsize','fontSize', v=>parseInt(v)||16);
+  bind('p_color','color');
+  bind('p_bg','bg');
+  bind('p_border','border');
+  bind('p_titlecolor','titleColor');
+  bind('p_x','x', v=>parseInt(v)||0);
+  bind('p_y','y', v=>parseInt(v)||0);
+  bind('p_w','w', v=>Math.max(20,parseInt(v)||20));
+  bind('p_h','h', v=>Math.max(20,parseInt(v)||20));
+
+  const bold = document.getElementById('p_bold');
+  if (bold) bold.addEventListener('change', ()=>upd({bold: bold.checked}));
+
+  // 从图库选择应用到当前元素
+  props.querySelectorAll('.lib-apply').forEach(item => {
+    item.onclick = () => {
+      const libItem = allItems(e.type).find(x => x.id === item.dataset.id);
+      if (libItem) {
+        upd({ image: libItem.url });
+        // 更新选中态 (不重建面板避免焦点丢失)
+        props.querySelectorAll('.lib-apply').forEach(i => i.classList.remove('lib-item-active'));
+        item.classList.add('lib-item-active');
+      }
+    };
+    // 拖拽到画布创建新元素
+    item.ondragstart = (ev) => {
+      dragItemData = {
+        mode: 'create',
+        type: e.type,
+        itemId: item.dataset.id
+      };
+      item.classList.add('dragging');
+      ev.dataTransfer.effectAllowed = 'copy';
+      ev.dataTransfer.setData('text/plain', item.dataset.id);
+    };
+    item.ondragend = () => {
+      item.classList.remove('dragging');
+      dragItemData = null;
+    };
+  });
+
+  // 属性面板内的分组折叠
+  props.querySelectorAll('.grp-head').forEach(head => {
+    head.onclick = () => {
+      const grpEl = head.parentElement;
+      const grpId = grpEl.dataset.grp;
+      const g = (imageLibrary[e.type] || []).find(x => x.id === grpId);
+      if (g) {
+        g.collapsed = !g.collapsed;
+        grpEl.classList.toggle('collapsed', g.collapsed);
+        saveGroupsToStorage();
+      }
+    };
+  });
+}
+
+// ============================================================
+//  图片选择
+// ============================================================
+// 把远程图片转为 dataURL (解决跨域+离线保存+导出依赖)
+function fetchImageAsDataURL(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        resolve(c.toDataURL('image/png'));
+      } catch (err) {
+        // canvas 被污染(跨域), 退而求其次直接存 URL
+        resolve(url);
+      }
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function pickImage(cb) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => {
+    const f = inp.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => cb(r.result);
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+
+// ============================================================
+//  图片库管理 (图片存于服务器 assets/ 目录, 浏览器只存 URL)
+// ============================================================
+// 分组结构持久化 (localStorage): 保存分组名/折叠态/各组图片URL, 刷新后按 URL 还原
+const LIB_GROUPS_KEY = 'lol_lib_groups_v1';
+function saveGroupsToStorage() {
+  try {
+    const data = {};
+    for (const t of ['champion', 'item', 'rune', 'summoner']) {
+      ensureGroups(t);
+      data[t] = imageLibrary[t].map(g => ({
+        name: g.name,
+        collapsed: !!g.collapsed,
+        urls: g.items.map(it => it.url)
+      }));
+    }
+    localStorage.setItem(LIB_GROUPS_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+function restoreGroupsFromStorage() {
+  try {
+    const raw = localStorage.getItem(LIB_GROUPS_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    for (const t of ['champion', 'item', 'rune', 'summoner']) {
+      const saved = data[t];
+      if (!Array.isArray(saved) || saved.length === 0) continue;
+      // 当前所有图片(已加载到默认分组)按 URL 建索引
+      ensureGroups(t);
+      const allImgs = imageLibrary[t].flatMap(g => g.items);
+      const urlToItem = new Map(allImgs.map(it => [it.url, it]));
+      const newGroups = [];
+      for (const sg of saved) {
+        // 兼容旧数据: 旧默认组名"默认"统一为"全部"
+        const name = sg.name === '默认' ? DEFAULT_GROUP_NAME : (sg.name || DEFAULT_GROUP_NAME);
+        const grp = newGroup(name);
+        grp.collapsed = !!sg.collapsed;
+        for (const url of (sg.urls || [])) {
+          const it = urlToItem.get(url);
+          if (it) { grp.items.push(it); urlToItem.delete(url); }
+        }
+        newGroups.push(grp);
+      }
+      // 剩余未匹配的图片(新增的或已删除分组的)放入第一个分组
+      if (urlToItem.size > 0) {
+        if (newGroups.length === 0) newGroups.push(newGroup(DEFAULT_GROUP_NAME));
+        for (const it of urlToItem.values()) newGroups[0].items.push(it);
+      }
+      imageLibrary[t] = newGroups;
+    }
+  } catch (e) {}
+}
+
+// 从服务器加载图库列表
+async function loadLibraryFromServer() {
+  try {
+    const res = await fetch('/api/library');
+    const data = await res.json();
+    imageLibrary = { champion: [], item: [], rune: [] };
+    for (const t of ['champion', 'item', 'rune', 'summoner']) {
+      imageLibrary[t] = [newGroup(DEFAULT_GROUP_NAME)];
+      for (const it of (data[t] || [])) {
+        imageLibrary[t][0].items.push({ id: 'lib_' + (libImgId++), name: it.name, url: it.url });
+      }
+    }
+    restoreGroupsFromStorage();  // 恢复用户自定义分组(按URL匹配)
+  } catch (e) { /* 服务器不可用时忽略 */ }
+}
+
+// 上传图片到指定类型的图库 (本地上传, 存为 dataURL, 不持久化)
+function addToLibrary(type, dataUrl, name) {
+  ensureGroups(type);
+  const item = { id: 'lib_' + (libImgId++), name: name || ('图片' + libImgId), url: dataUrl };
+  imageLibrary[type][0].items.push(item);   // 加到第一个分组
+  renderLibrary();
+  return item;
+}
+// 批量添加 (服务器缓存完成后调用)
+function addToLibraryBatch(type, items) {
+  ensureGroups(type);
+  for (const it of items) {
+    imageLibrary[type][0].items.push({ id: 'lib_' + (libImgId++), name: it.name, url: it.url });
+  }
+  renderLibrary();
+}
+// 从图库删除
+async function removeFromLibrary(type, id) {
+  const found = findItem(type, id);
+  if (!found) return;
+  const item = found.item;
+  found.group.items.splice(found.index, 1);
+  renderLibrary();
+  // 如果是服务器图片, 通知服务器删除
+  if (item && item.url && item.url.startsWith('/assets/')) {
+    const path = item.url.replace('/assets/', '');
+    const slash = path.indexOf('/');
+    const dir = path.substring(0, slash);
+    const fileName = path.substring(slash + 1);
+    const typeMap = { champions: 'champion', items: 'item', runes: 'rune', summoners: 'summoner' };
+    const apiType = typeMap[dir] || dir;
+    const nameNoExt = fileName.replace(/\.[^.]+$/, '');
+    try { await fetch(`/api/library/${apiType}/${encodeURIComponent(nameNoExt)}`, { method: 'DELETE' }); } catch(e) {}
+  }
+}
+// 拖拽状态
+let dragItemData = null;  // {mode:'move',type,fromGroupId,itemId} 或 {mode:'create',type,itemId}
+
+// 渲染左侧图库面板
+function renderLibrary() {
+  const box = document.getElementById('libraryBox');
+  if (!box) return;
+  const types = [
+    { key: 'champion', label: '英雄' },
+    { key: 'item', label: '装备' },
+    { key: 'rune', label: '符文' },
+    { key: 'summoner', label: '召唤师技能' }
+  ];
+  let html = '';
+  for (const t of types) {
+    ensureGroups(t.key);
+    const groups = imageLibrary[t.key];
+    const total = groups.reduce((s, g) => s + g.items.length, 0);
+    html += `<div class="lib-type" data-type="${t.key}">
+      <div class="lib-type-head">
+        <span class="tname">📁 ${t.label} (${total})</span>
+        <div class="tactions">
+          <button class="btn lib-refresh" data-type="${t.key}" title="从官网更新全部${t.label}图片">🔄 更新</button>
+          <button class="btn lib-add-grp" data-type="${t.key}" title="新建分组">+分组</button>
+        </div>
+      </div>`;
+    groups.forEach((g, gi) => {
+      const isDefault = gi === 0;   // 第一个分组为"全部", 官方图片, 不可删除
+      const collapsedCls = g.collapsed ? 'collapsed' : '';
+      html += `<div class="grp ${collapsedCls}" data-type="${t.key}" data-grp="${g.id}">
+        <div class="grp-head">
+          <span class="grp-arrow">▼</span>
+          <span class="grp-name" title="${isDefault ? '官方图片分组' : '双击重命名'}">${esc(g.name)}</span>
+          <span class="grp-count">${g.items.length}</span>
+          ${isDefault ? '' : `<button class="grp-del" data-type="${t.key}" data-grp="${g.id}" title="删除分组">×</button>`}
+        </div>
+        <div class="grp-body" data-type="${t.key}" data-grp="${g.id}">
+          <div class="lib-grid">`;
+      if (g.items.length === 0) {
+        html += `<div class="lib-empty">拖拽图片到此处</div>`;
+      } else {
+        for (const it of g.items) {
+          const delBtn = isDefault ? '' : `<span class="lib-del" data-type="${t.key}" data-id="${it.id}" title="删除">×</span>`;
+          html += `<div class="lib-item" data-type="${t.key}" data-grp="${g.id}" data-id="${it.id}" draggable="true" title="${esc(it.name)}">
+            <img src="${it.url}" alt="" loading="lazy">
+            <span class="lib-name-tip">${esc(it.name)}</span>
+            ${delBtn}
+          </div>`;
+        }
+      }
+      html += `</div></div></div>`;
+    });
+    html += `</div>`;
+  }
+  box.innerHTML = html;
+
+  // 图库变化时, 若有选中元素则刷新属性面板
+  if (selectedId) renderProps();
+
+  // 绑定: 更新(从官网重新缓存全部图片)
+  box.querySelectorAll('.lib-refresh').forEach(b => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      cacheOfficialAssets();
+    };
+  });
+
+  // 绑定: 新建分组
+  box.querySelectorAll('.lib-add-grp').forEach(b => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      const type = b.dataset.type;
+      const name = prompt('分组名称:', '新分组');
+      if (name !== null) {
+        imageLibrary[type].push(newGroup(name.trim() || '新分组'));
+        renderLibrary();
+      }
+    };
+  });
+
+  // 绑定: 删除图片
+  box.querySelectorAll('.lib-del').forEach(d => {
+    d.onclick = (ev) => {
+      ev.stopPropagation();
+      removeFromLibrary(d.dataset.type, d.dataset.id);
+    };
+  });
+
+  // 绑定: 分组折叠/展开
+  box.querySelectorAll('.grp-head').forEach(head => {
+    head.onclick = (ev) => {
+      // 点删除按钮或编辑名称时不切换
+      if (ev.target.classList.contains('grp-del')) return;
+      if (ev.target.classList.contains('grp-name') && ev.target.isContentEditable) return;
+      const grpEl = head.parentElement;
+      const type = grpEl.dataset.type;
+      const grpId = grpEl.dataset.grp;
+      const g = imageLibrary[type].find(x => x.id === grpId);
+      if (g) {
+        g.collapsed = !g.collapsed;
+        grpEl.classList.toggle('collapsed', g.collapsed);
+        saveGroupsToStorage();
+      }
+    };
+  });
+
+  // 绑定: 双击重命名分组
+  box.querySelectorAll('.grp-name').forEach(nameEl => {
+    nameEl.ondblclick = (ev) => {
+      ev.stopPropagation();
+      const grpEl = nameEl.closest('.grp');
+      const type = grpEl.dataset.type;
+      const grpId = grpEl.dataset.grp;
+      const g = imageLibrary[type].find(x => x.id === grpId);
+      if (!g) return;
+      nameEl.contentEditable = 'true';
+      nameEl.focus();
+      // 选中全部文字
+      const range = document.createRange();
+      range.selectNodeContents(nameEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const finish = () => {
+        nameEl.contentEditable = 'false';
+        const newName = nameEl.textContent.trim();
+        if (newName) g.name = newName;
+        renderLibrary();
+      };
+      nameEl.onblur = finish;
+      nameEl.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
+        if (e.key === 'Escape') { nameEl.textContent = g.name; nameEl.blur(); }
+      };
+    };
+  });
+
+  // 绑定: 删除分组
+  box.querySelectorAll('.grp-del').forEach(d => {
+    d.onclick = (ev) => {
+      ev.stopPropagation();
+      const type = d.dataset.type;
+      const grpId = d.dataset.grp;
+      const groups = imageLibrary[type];
+      if (groups.length <= 1) {
+        toast('至少保留一个分组');
+        return;
+      }
+      // 第一个分组("全部")不可删除
+      if (groups[0].id === grpId) {
+        toast('官方图片分组不可删除');
+        return;
+      }
+      const g = groups.find(x => x.id === grpId);
+      if (!g) return;
+      if (g.items.length > 0) {
+        if (!confirm(`确定删除分组 "${g.name}" 及其中的 ${g.items.length} 张图片？`)) return;
+      } else {
+        if (!confirm(`确定删除分组 "${g.name}"？`)) return;
+      }
+      // 直接删除分组(含其中图片), 不移入其他分组
+      imageLibrary[type] = groups.filter(x => x.id !== grpId);
+      renderLibrary();
+    };
+  });
+
+  // ===== 拖拽: 图片在分组间移动 =====
+  box.querySelectorAll('.lib-item[draggable]').forEach(item => {
+    // 右键菜单: 移动到 / 复制到 分组
+    item.oncontextmenu = (ev) => {
+      showCtxMenu(ev, item.dataset.type, item.dataset.grp, item.dataset.id);
+    };
+    item.ondragstart = (ev) => {
+      dragItemData = {
+        type: item.dataset.type,
+        fromGroupId: item.dataset.grp,
+        itemId: item.dataset.id
+      };
+      item.classList.add('dragging');
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', item.dataset.id);
+    };
+    item.ondragend = () => {
+      item.classList.remove('dragging');
+      box.querySelectorAll('.grp-drop-active').forEach(el => el.classList.remove('grp-drop-active'));
+      dragItemData = null;
+    };
+  });
+
+  box.querySelectorAll('.grp-body').forEach(body => {
+    body.ondragover = (ev) => {
+      if (!dragItemData || dragItemData.mode === 'create') return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      body.classList.add('grp-drop-active');
+    };
+    body.ondragleave = (ev) => {
+      if (!body.contains(ev.relatedTarget)) {
+        body.classList.remove('grp-drop-active');
+      }
+    };
+    body.ondrop = (ev) => {
+      ev.preventDefault();
+      body.classList.remove('grp-drop-active');
+      if (!dragItemData || dragItemData.mode === 'create') return;
+      const toType = body.dataset.type;
+      const toGroupId = body.dataset.grp;
+      if (dragItemData.type !== toType) {
+        toast('不能跨类型移动');
+        return;
+      }
+      if (dragItemData.fromGroupId === toGroupId) return;
+      const fromGroup = imageLibrary[toType].find(g => g.id === dragItemData.fromGroupId);
+      const toGroup = imageLibrary[toType].find(g => g.id === toGroupId);
+      if (!fromGroup || !toGroup) return;
+      const idx = fromGroup.items.findIndex(x => x.id === dragItemData.itemId);
+      if (idx < 0) return;
+      // "全部"分组(第一个分组)的图片只能复制, 不能移动
+      const isFromDefault = imageLibrary[toType][0]?.id === dragItemData.fromGroupId;
+      if (isFromDefault) {
+        const src = fromGroup.items[idx];
+        toGroup.items.push({ ...src, id: 'lib_' + (libImgId++) });
+        toast('已复制到「' + toGroup.name + '」');
+      } else {
+        const [moved] = fromGroup.items.splice(idx, 1);
+        toGroup.items.push(moved);
+      }
+      renderLibrary();
+    };
+  });
+
+  saveGroupsToStorage();  // 持久化分组结构
+}
+// 图库初始化: 从服务器加载已缓存的图片列表
+loadLibraryFromServer().then(() => {
+  renderLibrary();
+  if (selectedId) renderProps();
+});
+
+// ===== 图片库管理弹窗 =====
+function openLibraryModal() {
+  document.getElementById('libModal').classList.add('show');
+  renderLibrary();
+}
+function closeLibraryModal() {
+  document.getElementById('libModal').classList.remove('show');
+  hideCtxMenu();
+  if (selectedId) renderProps();
+}
+document.getElementById('btnOpenLibrary').onclick = openLibraryModal;
+document.getElementById('libModalClose').onclick = closeLibraryModal;
+document.getElementById('libModalMask').onclick = closeLibraryModal;
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') {
+    if (document.getElementById('ctxMenu').classList.contains('show')) hideCtxMenu();
+    else closeLibraryModal();
+  }
+});
+
+// ===== 右键菜单: 移动到 / 复制到 分组 =====
+let ctxTarget = null;   // {type, groupId, itemId}
+function showCtxMenu(ev, type, groupId, itemId) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  ctxTarget = { type, groupId, itemId };
+  const menu = document.getElementById('ctxMenu');
+  const groups = imageLibrary[type] || [];
+  // 判断是否为"全部"分组(第一个分组): 该组图片只能复制, 不能移动
+  const isDefaultGroup = groups.length > 0 && groups[0].id === groupId;
+  let html = '';
+  if (!isDefaultGroup) {
+    // 移动到 (仅非"全部"分组的图片可移动)
+    html += `<div class="ctx-item has-sub"><span>移动到…</span><span class="arrow">▶</span><div class="ctx-submenu">`;
+    for (const g of groups) {
+      const disabled = g.id === groupId ? 'disabled' : '';
+      html += `<div class="ctx-sub-item ${disabled}" data-action="move" data-grp="${g.id}"><span>${esc(g.name)}</span><span class="cnt">${g.items.length}</span></div>`;
+    }
+    html += `</div></div>`;
+  }
+  // 复制到
+  html += `<div class="ctx-item has-sub"><span>复制到…</span><span class="arrow">▶</span><div class="ctx-submenu">`;
+  for (const g of groups) {
+    const disabled = g.id === groupId ? 'disabled' : '';
+    html += `<div class="ctx-sub-item ${disabled}" data-action="copy" data-grp="${g.id}"><span>${esc(g.name)}</span><span class="cnt">${g.items.length}</span></div>`;
+  }
+  html += `</div></div>`;
+  menu.innerHTML = html;
+  menu.classList.add('show');
+  // 定位(避免溢出)
+  requestAnimationFrame(() => {
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    let x = ev.clientX, y = ev.clientY;
+    if (x + mw > window.innerWidth - 4) x = window.innerWidth - mw - 4;
+    if (y + mh > window.innerHeight - 4) y = window.innerHeight - mh - 4;
+    menu.style.left = Math.max(4, x) + 'px';
+    menu.style.top = Math.max(4, y) + 'px';
+  });
+}
+function hideCtxMenu() {
+  document.getElementById('ctxMenu').classList.remove('show');
+  ctxTarget = null;
+}
+// 点击菜单项执行移动/复制
+document.getElementById('ctxMenu').addEventListener('click', (ev) => {
+  const sub = ev.target.closest('.ctx-sub-item');
+  if (!sub || sub.classList.contains('disabled') || !ctxTarget) return;
+  const action = sub.dataset.action;
+  const toGroupId = sub.dataset.grp;
+  const { type, groupId, itemId } = ctxTarget;
+  const fromGroup = (imageLibrary[type] || []).find(g => g.id === groupId);
+  const toGroup = (imageLibrary[type] || []).find(g => g.id === toGroupId);
+  if (!fromGroup || !toGroup) return;
+  const idx = fromGroup.items.findIndex(x => x.id === itemId);
+  if (idx < 0) return;
+  if (action === 'move') {
+    const [moved] = fromGroup.items.splice(idx, 1);
+    toGroup.items.push(moved);
+    toast('已移动到「' + toGroup.name + '」');
+  } else if (action === 'copy') {
+    const src = fromGroup.items[idx];
+    toGroup.items.push({ ...src, id: 'lib_' + (libImgId++) });
+    toast('已复制到「' + toGroup.name + '」');
+  }
+  hideCtxMenu();
+  renderLibrary();
+});
+// 点击菜单外 / 滚动时关闭
+document.addEventListener('mousedown', (ev) => {
+  if (!ev.target.closest('#ctxMenu')) hideCtxMenu();
+});
+window.addEventListener('scroll', hideCtxMenu, true);
+window.addEventListener('resize', hideCtxMenu);
+
+// ============================================================
+//  缓存官方资源 (委托 Go 服务器下载到 assets/ 目录)
+// ============================================================
+async function cacheOfficialAssets() {
+  const version = (document.getElementById('inVersion').value || '').trim() || '16.10.1';
+
+  if (!confirm(`将从 Data Dragon ${version} 下载全部英雄头像、装备图标、符文图标、召唤师技能图标到本地 assets/ 目录。\n图片存于磁盘, 不占浏览器内存。\n确定继续？`)) return;
+
+  const setMsg = (m) => {
+    toast(m);
+    const el = document.getElementById('toast');
+    if (el) el.style.opacity = '1';
+  };
+
+  try {
+    // 启动服务器端缓存
+    const start = await fetch(`/api/cache/start?version=${encodeURIComponent(version)}`);
+    const sd = await start.json();
+    if (!sd.status) throw new Error('启动失败');
+
+    // 轮询进度
+    let lastStage = '';
+    while (true) {
+      const res = await fetch('/api/cache/status');
+      const p = await res.json();
+      if (!p.running) {
+        if (p.stage === 'error') throw new Error(p.message);
+        break;
+      }
+      if (p.total > 0) {
+        setMsg(`${p.message} (${p.done}/${p.total})`);
+      } else {
+        setMsg(p.message);
+      }
+      lastStage = p.stage;
+      await new Promise(r => setTimeout(r, 800));
+    }
+
+    // 完成, 重新加载图库
+    setMsg('缓存完成, 正在加载图库...');
+    await loadLibraryFromServer();
+    renderLibrary();
+    if (selectedId) renderProps();
+
+    const cCount = allItems('champion').length;
+    const iCount = allItems('item').length;
+    const rCount = allItems('rune').length;
+    const sCount = allItems('summoner').length;
+    const total = cCount + iCount + rCount + sCount;
+    setMsg(`完成! 共 ${total} 张图片`);
+    alert(`缓存完成!\n英雄: ${cCount}\n装备: ${iCount}\n符文: ${rCount}\n召唤师技能: ${sCount}\n\n图片已存于 assets/ 目录, 刷新不丢失。`);
+
+  } catch (e) {
+    setMsg('缓存失败: ' + e.message);
+    alert('缓存失败: ' + e.message);
+  }
+}
+
+// ============================================================
+//  顶栏: 尺寸 / 背景
+// ============================================================
+document.getElementById('btnApplySize').onclick = () => {
+  const w = parseInt(document.getElementById('inW').value) || 1920;
+  const h = parseInt(document.getElementById('inH').value) || 1080;
+  workspace.style.width = w+'px';
+  workspace.style.height = h+'px';
+  toast(`画布尺寸: ${w}×${h}`);
+};
+document.getElementById('bgColor').addEventListener('input', () => render());
+document.getElementById('btnBgImg').onclick = () => pickImage(d => { bgImageData = d; render(); });
+document.getElementById('btnClearBg').onclick = () => { bgImageData = null; render(); };
+
+// ============================================================
+//  保存 / 加载 JSON
+// ============================================================
+document.getElementById('btnSave').onclick = () => {
+  const data = {
+    width: parseInt(document.getElementById('inW').value),
+    height: parseInt(document.getElementById('inH').value),
+    bgColor: document.getElementById('bgColor').value,
+    bgImage: bgImageData,
+    elements,
+    library: imageLibrary
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '一图流配置.json';
+  a.click();
+  toast('已保存配置(含图库)');
+};
+
+document.getElementById('btnLoad').onclick = () => document.getElementById('fileLoader').click();
+document.getElementById('btnCache').onclick = () => cacheOfficialAssets();
+document.getElementById('fileLoader').onchange = (ev) => {
+  const f = ev.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const d = JSON.parse(r.result);
+      document.getElementById('inW').value = d.width || 1920;
+      document.getElementById('inH').value = d.height || 1080;
+      document.getElementById('bgColor').value = d.bgColor || '#0c0e14';
+      workspace.style.width = d.width+'px';
+      workspace.style.height = d.height+'px';
+      bgImageData = d.bgImage || null;
+      elements = d.elements || [];
+      // 恢复图库 (兼容旧配置无 library 字段 / 旧扁平格式)
+      if (d.library) {
+        imageLibrary = { champion: d.library.champion||[], item: d.library.item||[], rune: d.library.rune||[] };
+      } else {
+        imageLibrary = { champion: [], item: [], rune: [] };
+      }
+      migrateLibrary();
+      // 同步 libImgId
+      const allIds = [];
+      for (const t of ['champion','item','rune']) {
+        for (const g of imageLibrary[t]) for (const it of g.items) allIds.push(it.id);
+      }
+      libImgId = Math.max(1, ...allIds.map(x=>parseInt(String(x).replace('lib_',''))||0)) + 1;
+      zCounter = elements.reduce((m,e)=>Math.max(m,e.zIndex||0), 10);
+      idCounter = elements.length + 1;
+      selectedId = null;
+      selectedIds = [];
+      renderLibrary(); render(); renderProps();
+      toast('已加载配置');
+    } catch(err) { alert('配置文件解析失败: '+err.message); }
+  };
+  r.readAsText(f);
+  ev.target.value = '';
+};
+
+// ============================================================
+//  导出 PNG  (原生 Canvas 渲染, 无需 html2canvas, 零偏移零留白)
+// ============================================================
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+async function exportCanvas() {
+  const sel = workspace.querySelector('.el.selected');
+  if (sel) sel.classList.remove('selected');
+  toast('正在生成图片...');
+
+  const W = workspace.offsetWidth;
+  const H = workspace.offsetHeight;
+  const bgColor = document.getElementById('bgColor').value;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // 背景色
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, W, H);
+
+  // 背景图
+  if (bgImageData) {
+    try {
+      const img = await loadImage(bgImageData);
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(img, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    } catch (e) {}
+  }
+
+  // 按 zIndex 排序
+  const sorted = [...elements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+  // 预加载图片
+  const imgCache = {};
+  await Promise.all(
+    sorted
+      .filter(e => e.image && (e.type === 'champion' || e.type === 'item' || e.type === 'rune' || e.type === 'summoner'))
+      .map(async e => {
+        try { imgCache[e.id] = await loadImage(e.image); } catch (e) {}
+      })
+  );
+
+  for (const e of sorted) {
+    if (e.type === 'panel') {
+      ctx.fillStyle = e.bg || 'rgba(20,24,36,0.85)';
+      roundRect(ctx, e.x, e.y, e.w, e.h, 12);
+      ctx.fill();
+      ctx.strokeStyle = e.border || '#505a78';
+      ctx.lineWidth = 1;
+      roundRect(ctx, e.x, e.y, e.w, e.h, 12);
+      ctx.stroke();
+      if (e.title) {
+        ctx.fillStyle = e.titleColor || '#c8aa6e';
+        ctx.font = `bold ${Math.max(12, Math.round(e.h * 0.14))}px "PingFang SC","Microsoft YaHei",sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(e.title, e.x + 12, e.y + 8);
+      }
+    } else if (e.type === 'champion' || e.type === 'item' || e.type === 'rune' || e.type === 'summoner') {
+      const img = imgCache[e.id];
+      if (img) {
+        ctx.drawImage(img, e.x, e.y, e.w, e.h);
+      } else {
+        // 无图片时只绘制纯色占位块, 不显示文字
+        ctx.fillStyle = e.color;
+        ctx.fillRect(e.x, e.y, e.w, e.h);
+      }
+      ctx.strokeStyle = e.border;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(e.x, e.y, e.w, e.h);
+    } else if (e.type === 'text') {
+      if (e.bg && e.bg !== 'transparent') {
+        ctx.fillStyle = e.bg;
+        ctx.fillRect(e.x, e.y, e.w, e.h);
+      }
+      ctx.fillStyle = e.color || '#e6e6e6';
+      const fw = e.bold ? 'bold' : 'normal';
+      ctx.font = `${fw} ${e.fontSize}px "PingFang SC","Microsoft YaHei",sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(e.text || '', e.x + e.w / 2, e.y + e.h / 2);
+    }
+  }
+
+  if (sel) sel.classList.add('selected');
+  return canvas;
+}
+
+document.getElementById('btnExport').onclick = async () => {
+  const canvas = await exportCanvas();
+  canvas.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '一图流.png';
+    a.click();
+    toast('已导出 PNG');
+  });
+};
+
+document.getElementById('btnCopy').onclick = async () => {
+  try {
+    const canvas = await exportCanvas();
+    canvas.toBlob(async blob => {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+        toast('图片已复制到剪贴板');
+      } catch(err) {
+        toast('复制失败,请用导出PNG');
+      }
+    });
+  } catch(err) {
+    toast('生成失败: '+err.message);
+  }
+};
+
+// 初始化
+render();
+</script>
+</body>
+</html>

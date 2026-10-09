@@ -1,0 +1,188 @@
+package main
+
+// handler.go - HTTP 请求处理器
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"sync/atomic"
+)
+
+// CacheProgress 缓存下载进度
+type CacheProgress struct {
+	Running bool   `json:"running"`
+	Stage   string `json:"stage"`
+	Done    int    `json:"done"`
+	Total   int    `json:"total"`
+	Message string `json:"message"`
+}
+
+// LibItem 图库中的一项
+type LibItem struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+var (
+	cacheMu       sync.Mutex
+	cacheProgress CacheProgress
+	cacheVersion  atomic.Value // string
+)
+
+func init() {
+	cacheVersion.Store(DefaultVersion)
+}
+
+// ---------- 静态文件 ----------
+
+// staticHandler 托管前端页面
+func staticHandler(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	if path == "/" {
+		path = "/index.html"
+	}
+	// 安全: 防止路径穿越
+	if strings.Contains(path, "..") {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(WebDir, path))
+}
+
+// ---------- 图库 API ----------
+
+// libraryHandler GET /api/library 返回四类图片列表
+func libraryHandler(w http.ResponseWriter, r *http.Request) {
+	result := map[string][]LibItem{
+		"champion": listType("champions"),
+		"item":     listType("items"),
+		"rune":     listType("runes"),
+		"summoner": listType("summoners"),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// listType 列出某目录下的图片
+func listType(typeDir string) []LibItem {
+	dir := filepath.Join(AssetsDir, typeDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []LibItem{}
+	}
+	items := []LibItem{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !isImage(name) {
+			continue
+		}
+		items = append(items, LibItem{
+			Name: strings.TrimSuffix(name, filepath.Ext(name)),
+			URL:  fmt.Sprintf("/assets/%s/%s", typeDir, name),
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Name < items[j].Name
+	})
+	return items
+}
+
+// isImage 判断是否为图片文件
+func isImage(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" || ext == ".gif"
+}
+
+// libraryItemHandler DELETE /api/library/{type}/{name} 删除图片
+func libraryItemHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/library/"), "/")
+	if len(parts) != 2 {
+		http.Error(w, "bad path", http.StatusBadRequest)
+		return
+	}
+	dir, ok := TypeToDir[parts[0]]
+	if !ok {
+		http.Error(w, "unknown type", http.StatusBadRequest)
+		return
+	}
+	name := parts[1]
+	// 安全校验
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
+	path := findImageFile(filepath.Join(AssetsDir, dir), name)
+	if path == "" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err := os.Remove(path); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// findImageFile 按名称查找图片 (尝试常见扩展名)
+func findImageFile(dir, name string) string {
+	for _, ext := range []string{".png", ".jpg", ".jpeg", ".webp", ".gif"} {
+		p := filepath.Join(dir, name+ext)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// ---------- 缓存状态 API ----------
+
+// versionHandler GET /api/version
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"version": cacheVersion.Load().(string)})
+}
+
+// cacheStatusHandler GET /api/cache/status
+func cacheStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	json.NewEncoder(w).Encode(cacheProgress)
+}
+
+// cacheStartHandler POST /api/cache/start?version=xx
+func cacheStartHandler(w http.ResponseWriter, r *http.Request) {
+	cacheMu.Lock()
+	running := cacheProgress.Running
+	cacheMu.Unlock()
+	if running {
+		http.Error(w, "缓存正在进行中", http.StatusConflict)
+		return
+	}
+
+	version := r.URL.Query().Get("version")
+	if version == "" {
+		version = cacheVersion.Load().(string)
+	}
+	cacheVersion.Store(version)
+
+	go runCache(version)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
