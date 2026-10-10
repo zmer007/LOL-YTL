@@ -196,7 +196,7 @@
   <button class="btn" id="btnBgImg">背景图</button>
   <button class="btn" id="btnClearBg">清背景</button>
   <div class="spacer"></div>
-  <button class="btn" id="btnSave">保存JSON</button>
+  <button class="btn" id="btnNew" title="输入名称并开始一个新配置">新建JSON</button>
   <button class="btn" id="btnLoad">加载JSON</button>
   <button class="btn" id="btnClearCache" title="删除所有已缓存的英雄/装备/符文/召唤师技能图片">清空缓存</button>
   <span class="divider"></span>
@@ -222,6 +222,7 @@
       · Ctrl+C / Ctrl+V 复制粘贴<br>
       · Ctrl+D 快速复制<br>
       · Ctrl+Z 撤销 / Ctrl+Shift+Z 重做<br>
+      · Ctrl+S 保存当前配置<br>
       · Delete 键删除
     </div>
 
@@ -1887,9 +1888,11 @@ document.getElementById('btnClearBg').onclick = () => {
 // ============================================================
 
 // 应用配置数据到画布 (共用: 文件加载 / 服务器加载)
-function applyConfigData(d) {
+// name: 服务器上的配置名; 本地文件导入时传 null (Cmd+S 会走另存为)
+function applyConfigData(d, name = null) {
   endEdit();
   recordUndo();  // 加载整个配置前记录, 允许撤销回到加载前的画布
+  currentConfigName = name;
   const w = d.width || 2560;
   const h = d.height || 1440;
   setSizeSelect(w, h);
@@ -1939,23 +1942,76 @@ function buildConfigData() {
   };
 }
 
-// 保存到服务器
-document.getElementById('btnSave').onclick = async () => {
-  const name = prompt('请输入配置名称:', '默认配置');
-  if (!name || !name.trim()) return;
-  const data = buildConfigData();
+// 当前正在编辑的服务器配置名 (null = 未命名, Cmd+S 时需输入名称另存)
+let currentConfigName = null;
+
+// POST 当前画布到服务器指定配置名
+async function postConfig(name) {
+  const res = await fetch(`/api/config/save?name=${encodeURIComponent(name)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildConfigData())
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+// 保存: 已命名则覆盖当前配置, 未命名则弹窗输入名称 (另存为)
+async function saveCurrentConfig() {
+  let name = currentConfigName;
+  if (!name) {
+    name = prompt('请输入配置名称:', '默认配置');
+    if (!name || !name.trim()) return;
+    name = name.trim();
+  }
   try {
-    const res = await fetch(`/api/config/save?name=${encodeURIComponent(name.trim())}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    if (!res.ok) throw new Error(await res.text());
-    toast(`已保存: ${name.trim()}`);
+    await postConfig(name);
+    currentConfigName = name;
+    toast(`已保存: ${name}`);
   } catch (err) {
     alert('保存失败: ' + err.message);
   }
-};
+}
+
+// 新建: 弹窗输入名称, 确定后清空画布并以该名称开始编辑
+async function newConfig() {
+  const input = prompt('请输入新配置名称:', '新配置');
+  if (input === null) return;  // 取消
+  const name = input.trim();
+  if (!name) { toast('名称不能为空，已取消新建'); return; }
+  // 重名检查: 避免空白新配置覆盖已有配置
+  try {
+    const list = await fetch('/api/config/list').then(r => r.json());
+    if (Array.isArray(list) && list.some(x => x.name === name)) {
+      alert(`配置 "${name}" 已存在，请换一个名称，或通过"加载JSON"打开它`);
+      return;
+    }
+  } catch (e) { /* 列表查询失败不阻塞新建 */ }
+  endEdit();
+  recordUndo();  // 允许撤销回到新建前的画布
+  elements = [];
+  bgImageData = null;
+  document.getElementById('bgColor').value = '#0c0e14';
+  workspace.style.width = '2560px';
+  workspace.style.height = '1440px';
+  setSizeSelect(2560, 1440);
+  idCounter = 1;
+  zCounter = 10;
+  selectedId = null;
+  selectedIds = [];
+  currentConfigName = name;
+  render();
+  renderProps();
+  toast(`已新建「${name}」，开始编辑吧`);
+}
+
+document.getElementById('btnNew').onclick = newConfig;
+
+// Ctrl/Cmd+S 保存当前配置 (全局生效, 含输入框聚焦时; 屏蔽浏览器默认"保存网页")
+document.addEventListener('keydown', (ev) => {
+  if (!(ev.ctrlKey || ev.metaKey) || (ev.key !== 's' && ev.key !== 'S')) return;
+  ev.preventDefault();
+  saveCurrentConfig();
+});
 
 // 加载配置列表模态框
 const loadModal = document.createElement('div');
@@ -2008,7 +2064,7 @@ async function loadConfigList() {
             const r = await fetch(`/api/config/load?name=${encodeURIComponent(name)}`);
             if (!r.ok) throw new Error('加载失败');
             const d = await r.json();
-            applyConfigData(d);
+            applyConfigData(d, name);
             loadModal.classList.remove('show');
             toast(`已加载: ${name}`);
           } catch (err) { alert('加载失败: ' + err.message); }
@@ -2016,6 +2072,9 @@ async function loadConfigList() {
           if (!confirm(`确定删除配置 "${name}" ?`)) return;
           try {
             await fetch(`/api/config/delete?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+            if (currentConfigName === name) {
+              currentConfigName = null;
+            }
             loadConfigList();
             toast(`已删除: ${name}`);
           } catch (err) { alert('删除失败: ' + err.message); }
@@ -2046,8 +2105,8 @@ document.getElementById('fileLoader').onchange = (ev) => {
   r.onload = () => {
     try {
       const d = JSON.parse(r.result);
-      applyConfigData(d);
-      toast('已加载本地配置');
+      applyConfigData(d);  // 本地文件无服务器名, 保持未命名, Ctrl+S 时另存
+      toast('已加载本地配置, 按 Ctrl/Cmd+S 可保存到服务器');
     } catch(err) { alert('配置文件解析失败: '+err.message); }
   };
   r.readAsText(f);
