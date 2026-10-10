@@ -30,6 +30,7 @@ func main() {
 	// 缓存 API
 	mux.HandleFunc("/api/cache/start", cacheStartHandler)
 	mux.HandleFunc("/api/cache/status", cacheStatusHandler)
+	mux.HandleFunc("/api/cache/clear", cacheClearHandler)
 	mux.HandleFunc("/api/version", versionHandler)
 
 	// 配置保存/加载 API

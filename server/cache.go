@@ -116,6 +116,16 @@ func cacheItems(base string) error {
 		if !ok {
 			continue
 		}
+		// 仅保留召唤师峡谷(map 11)可用的装备 (排除大乱斗/无限火力/云顶/竞技场等娱乐模式)
+		maps, _ := vm["maps"].(map[string]interface{})
+		if maps["11"] != true {
+			continue
+		}
+		// 仅保留可购买的装备 (排除任务道具/特殊物品)
+		gold, _ := vm["gold"].(map[string]interface{})
+		if purchasable, _ := gold["purchasable"].(bool); !purchasable {
+			continue
+		}
 		img, ok := vm["image"].(map[string]interface{})
 		if !ok {
 			continue
@@ -277,6 +287,18 @@ func cacheSummoners(base string) error {
 		if !ok {
 			continue
 		}
+		// 仅保留经典模式(CLASSIC)可用的召唤师技能 (排除云顶/竞技场/魄罗王等娱乐模式)
+		modes, _ := vm["modes"].([]interface{})
+		hasClassic := false
+		for _, m := range modes {
+			if s, _ := m.(string); s == "CLASSIC" {
+				hasClassic = true
+				break
+			}
+		}
+		if !hasClassic {
+			continue
+		}
 		img, ok := vm["image"].(map[string]interface{})
 		if !ok {
 			continue
@@ -303,6 +325,8 @@ func downloadImages(typeDir string, keys []string, cnNames map[string]string, ur
 	if total == 0 {
 		return
 	}
+	// 确保目标目录存在 (清空缓存后可能被删除)
+	os.MkdirAll(filepath.Join(AssetsDir, typeDir), 0755)
 	sem := make(chan struct{}, DownloadConcurrency)
 	var wg sync.WaitGroup
 	var done int32

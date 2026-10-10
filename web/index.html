@@ -198,7 +198,7 @@
   <div class="spacer"></div>
   <button class="btn" id="btnSave">保存JSON</button>
   <button class="btn" id="btnLoad">加载JSON</button>
-  <button class="btn" id="btnCache" title="从官网拉取全部英雄头像/装备/符文图标到图库">缓存官方资源</button>
+  <button class="btn" id="btnClearCache" title="删除所有已缓存的英雄/装备/符文/召唤师技能图片">清空缓存</button>
   <span class="divider"></span>
   <button class="btn primary" id="btnExport">导出PNG</button>
   <button class="btn primary" id="btnCopy">复制图片</button>
@@ -784,7 +784,7 @@ function renderLibraryGridHTML(type, activeUrl) {
   const groups = imageLibrary[type] || [];
   const totalCount = groups.reduce((s, g) => s + g.items.length, 0);
   if (totalCount === 0) {
-    return '<div class="lib-empty">图库暂无图片, 请先点击顶部「缓存官方资源」</div>';
+    return '<div class="lib-empty">图库暂无图片</div>';
   }
   let grid = '';
   for (const g of groups) {
@@ -1045,6 +1045,13 @@ function saveGroupsToStorage() {
     localStorage.setItem(LIB_GROUPS_KEY, JSON.stringify(data));
   } catch (e) {}
 }
+// urlPath 去掉 URL 的查询参数 (用于匹配, 忽略 ?v=版本号)
+function urlPath(url) {
+  if (!url) return url;
+  const i = url.indexOf('?');
+  return i >= 0 ? url.substring(0, i) : url;
+}
+
 function restoreGroupsFromStorage() {
   try {
     const raw = localStorage.getItem(LIB_GROUPS_KEY);
@@ -1053,11 +1060,11 @@ function restoreGroupsFromStorage() {
     for (const t of ['champion', 'item', 'rune', 'summoner']) {
       const saved = data[t];
       if (!Array.isArray(saved) || saved.length === 0) continue;
-      // 当前所有图片(已加载到默认分组)按 URL 建索引
+      // 当前所有图片(已加载到默认分组)按 URL 路径建索引 (忽略 ?v=版本号)
       ensureGroups(t);
       const allImgs = imageLibrary[t].flatMap(g => g.items);
-      const urlToItem = new Map(allImgs.map(it => [it.url, it]));
-      const matchedUrls = new Set();
+      const urlToItem = new Map(allImgs.map(it => [urlPath(it.url), it]));
+      const matchedPaths = new Set();
       const newGroups = [];
       const savedGroupNames = new Set();
       for (const sg of saved) {
@@ -1067,17 +1074,17 @@ function restoreGroupsFromStorage() {
         const grp = newGroup(name);
         grp.collapsed = !!sg.collapsed;
         for (const url of (sg.urls || [])) {
-          const it = urlToItem.get(url);
+          const it = urlToItem.get(urlPath(url));
           if (it) {
             // 克隆图片项 (新 ID), 允许同一图片出现在多个分组 (如"全部"+分类组)
             grp.items.push({ ...it, id: 'lib_' + (libImgId++) });
-            matchedUrls.add(url);
+            matchedPaths.add(urlPath(url));
           }
         }
         newGroups.push(grp);
       }
       // 剩余未匹配的图片(新增的)放入第一个分组
-      const unmatched = [...urlToItem.values()].filter(it => !matchedUrls.has(it.url));
+      const unmatched = [...urlToItem.values()].filter(it => !matchedPaths.has(urlPath(it.url)));
       if (unmatched.length > 0) {
         if (newGroups.length === 0) newGroups.push(newGroup(DEFAULT_GROUP_NAME));
         for (const it of unmatched) newGroups[0].items.push(it);
@@ -1163,7 +1170,7 @@ async function removeFromLibrary(type, id) {
   renderLibrary();
   // 如果是服务器图片, 通知服务器删除
   if (item && item.url && item.url.startsWith('/assets/')) {
-    const path = item.url.replace('/assets/', '');
+    const path = urlPath(item.url).replace('/assets/', '');
     const slash = path.indexOf('/');
     const dir = path.substring(0, slash);
     const fileName = path.substring(slash + 1);
@@ -1195,7 +1202,7 @@ function renderLibrary() {
       <div class="lib-type-head">
         <span class="tname">📁 ${t.label} (${total})</span>
         <div class="tactions">
-          <button class="btn lib-refresh" data-type="${t.key}" title="从官网更新全部${t.label}图片">🔄 更新</button>
+          <button class="btn lib-refresh" data-type="${t.key}" title="从官网重新下载全部${t.label}图片">🔄 更新</button>
           <button class="btn lib-add-grp" data-type="${t.key}" title="新建分组">+分组</button>
         </div>
       </div>`;
@@ -1525,7 +1532,6 @@ async function cacheOfficialAssets() {
     if (!sd.status) throw new Error('启动失败');
 
     // 轮询进度
-    let lastStage = '';
     while (true) {
       const res = await fetch('/api/cache/status');
       const p = await res.json();
@@ -1538,7 +1544,6 @@ async function cacheOfficialAssets() {
       } else {
         setMsg(p.message);
       }
-      lastStage = p.stage;
       await new Promise(r => setTimeout(r, 800));
     }
 
@@ -1559,6 +1564,28 @@ async function cacheOfficialAssets() {
   } catch (e) {
     setMsg('缓存失败: ' + e.message);
     alert('缓存失败: ' + e.message);
+  }
+}
+
+// ============================================================
+//  清空缓存 (删除所有已缓存的图片资源)
+// ============================================================
+async function clearCache() {
+  if (!confirm('确定要清空所有缓存的图片吗？\n\n将删除全部英雄头像、装备图标、符文图标、召唤师技能图标。\n此操作不可撤销！')) return;
+
+  try {
+    const res = await fetch('/api/cache/clear', { method: 'POST' });
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message || '清空失败');
+
+    toast(data.message || '缓存已清空');
+    // 重新加载图库 (此时图库为空)
+    await loadLibraryFromServer();
+    renderLibrary();
+    if (selectedId) renderProps();
+  } catch (e) {
+    toast('清空缓存失败: ' + e.message);
+    alert('清空缓存失败: ' + e.message);
   }
 }
 
@@ -1777,7 +1804,7 @@ document.getElementById('btnLoad').onclick = () => {
   loadModal.classList.add('show');
   loadConfigList();
 };
-document.getElementById('btnCache').onclick = () => cacheOfficialAssets();
+document.getElementById('btnClearCache').onclick = () => clearCache();
 
 // 本地文件导入 (保留兼容)
 document.getElementById('fileLoader').onchange = (ev) => {

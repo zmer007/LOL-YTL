@@ -90,9 +90,11 @@ func listType(typeDir string) []LibItem {
 			continue
 		}
 		cnName := strings.TrimSuffix(name, filepath.Ext(name))
+		// URL 带版本号参数, 避免浏览器缓存旧图片
+		ver := cacheVersion.Load().(string)
 		items = append(items, LibItem{
 			Name:     cnName,
-			URL:      fmt.Sprintf("/assets/%s/%s", typeDir, name),
+			URL:      fmt.Sprintf("/assets/%s/%s?v=%s", typeDir, name, ver),
 			Category: meta[cnName], // 空字符串表示无分类
 		})
 	}
@@ -204,6 +206,34 @@ func cacheStartHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
+
+// cacheClearHandler POST /api/cache/clear - 删除所有缓存的图片资源
+func cacheClearHandler(w http.ResponseWriter, r *http.Request) {
+	cacheMu.Lock()
+	running := cacheProgress.Running
+	cacheMu.Unlock()
+	if running {
+		http.Error(w, "缓存正在进行中, 无法清空", http.StatusConflict)
+		return
+	}
+
+	// 需要删除的图片目录和元数据目录
+	dirs := []string{"champions", "items", "runes", "summoners", "meta"}
+	deleted := 0
+	for _, d := range dirs {
+		p := filepath.Join(AssetsDir, d)
+		if err := os.RemoveAll(p); err == nil {
+			deleted++
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"deleted": deleted,
+		"message": fmt.Sprintf("已清空 %d 个目录", deleted),
+	})
 }
 
 // ---------- 配置保存/加载 API ----------
