@@ -1,0 +1,46 @@
+{
+  "name": "lol-ytl-editor",
+  "productName": "LOL-YTL",
+  "version": "1.0.0",
+  "description": "LOL 一图流拖拽编辑器 (Electron 桌面版)",
+  "main": "main.js",
+  "author": "zmer007",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.zmer.lolytl",
+    "productName": "LOL-YTL",
+    "publish": null,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server.js"
+    ],
+    "extraResources": [
+      { "from": "web", "to": "web" },
+      { "from": "assets", "to": "assets" }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "LOL一图流编辑器"
+    }
+  }
+}
