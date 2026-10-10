@@ -219,6 +219,8 @@
       · 拖动元素调整位置<br>
       · 拖动角点调整大小<br>
       · 选中后在右侧编辑<br>
+      · Ctrl+C / Ctrl+V 复制粘贴<br>
+      · Ctrl+D 快速复制<br>
       · Delete 键删除
     </div>
 
@@ -764,14 +766,87 @@ function alignElements(mode) {
 // 键盘删除
 document.addEventListener('keydown', (ev) => {
   if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedIds.length > 0) {
-    const tag = ev.target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (isEditingField()) return;
     elements = elements.filter(x => !selectedIds.includes(x.id));
     selectedIds = [];
     selectedId = null;
     render();
     renderProps();
     ev.preventDefault();
+  }
+});
+
+// ============================================================
+//  复制 / 粘贴 / 快速复制 (Ctrl+C / Ctrl+V / Ctrl+D, Mac 用 Cmd)
+// ============================================================
+let clipboard = [];  // 存放复制的元素深拷贝
+
+function isEditingField() {
+  const tag = document.activeElement?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+         document.activeElement?.isContentEditable;
+}
+
+document.addEventListener('keydown', (ev) => {
+  // 仅在非编辑态时处理元素复制粘贴
+  if (isEditingField()) return;
+  const mod = ev.ctrlKey || ev.metaKey;
+  if (!mod) return;
+
+  // 复制选中元素到剪贴板
+  if (ev.key === 'c' || ev.key === 'C') {
+    if (selectedIds.length === 0) return;
+    clipboard = selectedIds
+      .map(id => elements.find(e => e.id === id))
+      .filter(Boolean)
+      .map(e => JSON.parse(JSON.stringify(e)));  // 深拷贝
+    ev.preventDefault();
+    toast(`已复制 ${clipboard.length} 个元素`);
+    return;
+  }
+
+  // 粘贴剪贴板中的元素
+  if (ev.key === 'v' || ev.key === 'V') {
+    if (clipboard.length === 0) return;
+    const offset = 12;
+    const newIds = [];
+    for (const src of clipboard) {
+      const clone = JSON.parse(JSON.stringify(src));
+      clone.id = uid();
+      clone.x = (clone.x || 0) + offset;
+      clone.y = (clone.y || 0) + offset;
+      clone.zIndex = ++zCounter;
+      elements.push(clone);
+      newIds.push(clone.id);
+    }
+    setSelectedIds(newIds);
+    render();
+    ev.preventDefault();
+    toast(`已粘贴 ${newIds.length} 个元素`);
+    return;
+  }
+
+  // 快速复制 (复制 + 粘贴一步完成)
+  if (ev.key === 'd' || ev.key === 'D') {
+    if (selectedIds.length === 0) return;
+    const offset = 12;
+    const newIds = [];
+    for (const id of selectedIds) {
+      const src = elements.find(e => e.id === id);
+      if (!src) continue;
+      const clone = JSON.parse(JSON.stringify(src));
+      clone.id = uid();
+      clone.x = (clone.x || 0) + offset;
+      clone.y = (clone.y || 0) + offset;
+      clone.zIndex = ++zCounter;
+      elements.push(clone);
+      newIds.push(clone.id);
+    }
+    setSelectedIds(newIds);
+    render();
+    ev.preventDefault();
+    toast(`已复制 ${newIds.length} 个元素`);
+    return;
   }
 });
 
