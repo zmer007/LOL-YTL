@@ -221,6 +221,7 @@
       · 选中后在右侧编辑<br>
       · Ctrl+C / Ctrl+V 复制粘贴<br>
       · Ctrl+D 快速复制<br>
+      · Ctrl+Z 撤销 / Ctrl+Shift+Z 重做<br>
       · Delete 键删除
     </div>
 
@@ -390,6 +391,7 @@ function addElement(type) {
     el = { id: uid(), type, x: 8, y: 8, w: 260, h: 140, title: '分区标题', bg: 'rgba(20,24,36,0.85)', border: '#505a78', titleColor: '#c89b3c' };
   }
   el.zIndex = ++zCounter;
+  recordUndo();
   elements.push(el);
   render();
   select(el.id);
@@ -518,6 +520,7 @@ workspace.addEventListener('dblclick', (ev) => {
     text: '文字内容', fontSize: 16, color: '#e6e6e6', bold: false, bg: 'transparent',
     zIndex: ++zCounter
   };
+  recordUndo();
   elements.push(el);
   render();
   select(el.id);
@@ -547,6 +550,7 @@ workspace.addEventListener('drop', (ev) => {
     name: '', color: randColor(type + idCounter),
     image: libItem.url, border: s.border, zIndex: ++zCounter
   };
+  recordUndo();
   elements.push(el);
   render();
   select(el.id);
@@ -564,6 +568,7 @@ workspace.addEventListener('mousedown', (ev) => {
   const el = elements.find(x => x.id === id);
   if (!el) return;
 
+  beginGesture();  // 记录拖拽前状态, mouseup 时提交为一条撤销记录
   if (ev.target.classList.contains('resize-handle')) {
     // 缩放
     const handle = ev.target.dataset.handle;
@@ -642,6 +647,7 @@ document.addEventListener('mousemove', (ev) => {
 });
 
 document.addEventListener('mouseup', () => {
+  if (dragState) endGesture();  // 拖拽结束, 提交撤销记录
   dragState = null;
   coordTip.style.display = 'none';
 });
@@ -717,6 +723,7 @@ function getElementsInRect(x1, y1, x2, y2) {
 function alignElements(mode) {
   const els = elements.filter(x => selectedIds.includes(x.id));
   if (els.length < 2) return;
+  recordUndo();
   // 计算所有元素的边界
   const minX = Math.min(...els.map(e => e.x));
   const maxX = Math.max(...els.map(e => e.x + e.w));
@@ -767,6 +774,7 @@ function alignElements(mode) {
 document.addEventListener('keydown', (ev) => {
   if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedIds.length > 0) {
     if (isEditingField()) return;
+    recordUndo();
     elements = elements.filter(x => !selectedIds.includes(x.id));
     selectedIds = [];
     selectedId = null;
@@ -808,6 +816,7 @@ document.addEventListener('keydown', (ev) => {
   // 粘贴剪贴板中的元素
   if (ev.key === 'v' || ev.key === 'V') {
     if (clipboard.length === 0) return;
+    recordUndo();
     const offset = 12;
     const newIds = [];
     for (const src of clipboard) {
@@ -829,6 +838,7 @@ document.addEventListener('keydown', (ev) => {
   // 快速复制 (复制 + 粘贴一步完成)
   if (ev.key === 'd' || ev.key === 'D') {
     if (selectedIds.length === 0) return;
+    recordUndo();
     const offset = 12;
     const newIds = [];
     for (const id of selectedIds) {
@@ -848,6 +858,128 @@ document.addEventListener('keydown', (ev) => {
     toast(`已复制 ${newIds.length} 个元素`);
     return;
   }
+});
+
+// ============================================================
+//  撤销 / 重做 (Ctrl/Cmd+Z 撤销, Ctrl/Cmd+Shift+Z 或 Ctrl+Y 重做)
+// ============================================================
+const undoStack = [];
+const redoStack = [];
+const HISTORY_LIMIT = 30;
+let editSnap = null;     // 属性面板连续编辑会话开始前的快照
+let gestureSnap = null;  // 拖拽/缩放手势开始前的快照
+
+// 截取当前画布完整状态
+function snapshotState() {
+  return {
+    elements: JSON.parse(JSON.stringify(elements)),
+    bgImageData: bgImageData,
+    bgColor: document.getElementById('bgColor').value,
+    width: workspace.style.width,
+    height: workspace.style.height,
+    idCounter: idCounter,
+    zCounter: zCounter
+  };
+}
+
+// 恢复到某一快照
+function restoreState(s) {
+  // 防御: 损坏的快照直接忽略, 避免中断撤销流程
+  if (!s || !Array.isArray(s.elements)) {
+    console.warn('跳过损坏的历史快照', s);
+    return;
+  }
+  elements = JSON.parse(JSON.stringify(s.elements));
+  bgImageData = s.bgImageData;
+  document.getElementById('bgColor').value = s.bgColor;
+  workspace.style.width = s.width;
+  workspace.style.height = s.height;
+  const w = parseInt(s.width), h = parseInt(s.height);
+  if (w && h) setSizeSelect(w, h);
+  idCounter = s.idCounter;
+  zCounter = s.zCounter;
+  selectedId = null;
+  selectedIds = [];
+  render();
+  renderProps();
+}
+
+// 提交一个"修改前"快照到撤销栈 (带去重)
+function commitSnapshot(s) {
+  const cur = JSON.stringify(snapshotState());
+  if (JSON.stringify(s) === cur) return;  // 与当前状态相同, 无需记录
+  const top = undoStack[undoStack.length - 1];
+  if (top && JSON.stringify(top) === JSON.stringify(s)) return;  // 与上一条相同
+  undoStack.push(s);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack.length = 0;
+}
+
+// 离散操作(增删/粘贴/对齐/背景等)执行前调用
+function recordUndo() {
+  const s = snapshotState();
+  const top = undoStack[undoStack.length - 1];
+  if (top && JSON.stringify(top) === JSON.stringify(s)) return;
+  undoStack.push(s);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack.length = 0;
+}
+
+// 连续编辑会话: focusin 时开始, focusout/change 时提交 (一次编辑只产生一条记录)
+function beginEdit() {
+  if (editSnap === null) editSnap = snapshotState();
+}
+function endEdit() {
+  if (editSnap === null) return;
+  const s = editSnap;
+  editSnap = null;
+  commitSnapshot(s);
+}
+
+// 拖拽手势: mousedown 时开始, mouseup 时提交 (整次拖动只产生一条记录)
+function beginGesture() {
+  gestureSnap = snapshotState();
+}
+function endGesture() {
+  if (gestureSnap === null) return;
+  const s = gestureSnap;
+  gestureSnap = null;
+  commitSnapshot(s);
+}
+
+function undo() {
+  if (undoStack.length === 0) { toast('没有可撤销的操作'); return; }
+  redoStack.push(snapshotState());
+  restoreState(undoStack.pop());
+  toast('撤销');
+}
+function redo() {
+  if (redoStack.length === 0) { toast('没有可重做的操作'); return; }
+  undoStack.push(snapshotState());
+  restoreState(redoStack.pop());
+  toast('重做');
+}
+
+document.addEventListener('keydown', (ev) => {
+  if (isEditingField()) return;  // 编辑态下让浏览器原生处理
+  const mod = ev.ctrlKey || ev.metaKey;
+  if (!mod) return;
+  const key = ev.key;
+  if (key === 'z' || key === 'Z') {
+    ev.preventDefault();
+    if (ev.shiftKey) redo(); else undo();
+  } else if (key === 'y' || key === 'Y') {
+    ev.preventDefault();
+    redo();
+  }
+});
+
+// 属性面板内连续输入合并为一条撤销记录 (在多个输入框间移动不中断会话)
+props.addEventListener('focusin', beginEdit);
+props.addEventListener('focusout', () => {
+  setTimeout(() => {
+    if (!props.contains(document.activeElement)) endEdit();
+  }, 0);
 });
 
 // ============================================================
@@ -947,6 +1079,7 @@ function renderProps() {
     });
     const mdel = document.getElementById('p_mdel');
     if (mdel) mdel.onclick = () => {
+      recordUndo();
       elements = elements.filter(x => !selectedIds.includes(x.id));
       selectedIds = []; selectedId = null; render(); renderProps();
     };
@@ -1023,6 +1156,8 @@ function bindProps(e) {
     item.onclick = () => {
       const libItem = allItems(e.type).find(x => x.id === item.dataset.id);
       if (libItem) {
+        endEdit();  // 先提交进行中的输入编辑, 再独立记录换图操作
+        recordUndo();
         upd({ image: libItem.url });
         // 更新选中态 (不重建面板避免焦点丢失)
         props.querySelectorAll('.lib-apply').forEach(i => i.classList.remove('lib-item-active'));
@@ -1690,6 +1825,9 @@ function getCanvasSize() {
 
 // 应用尺寸到画布
 function applyCanvasSize(w, h) {
+  if (workspace.style.width !== w + 'px' || workspace.style.height !== h + 'px') {
+    recordUndo();
+  }
   workspace.style.width = w + 'px';
   workspace.style.height = h + 'px';
   toast(`画布尺寸: ${w}×${h}`);
@@ -1730,9 +1868,19 @@ document.getElementById('selSize').addEventListener('change', function () {
     applyCanvasSize(w, h);
   }
 });
-document.getElementById('bgColor').addEventListener('input', () => render());
-document.getElementById('btnBgImg').onclick = () => pickImage(d => { bgImageData = d; render(); });
-document.getElementById('btnClearBg').onclick = () => { bgImageData = null; render(); };
+// 背景色: 取色过程连续触发 input, 用编辑会话合并为一条撤销记录
+const bgColorEl = document.getElementById('bgColor');
+bgColorEl.addEventListener('input', () => render());
+bgColorEl.addEventListener('focus', beginEdit);
+bgColorEl.addEventListener('change', endEdit);
+bgColorEl.addEventListener('blur', endEdit);
+document.getElementById('btnBgImg').onclick = () => pickImage(d => { recordUndo(); bgImageData = d; render(); });
+document.getElementById('btnClearBg').onclick = () => {
+  if (!bgImageData) return;
+  recordUndo();
+  bgImageData = null;
+  render();
+};
 
 // ============================================================
 //  保存 / 加载 JSON  (保存到服务器 assets/saves/)
@@ -1740,6 +1888,8 @@ document.getElementById('btnClearBg').onclick = () => { bgImageData = null; rend
 
 // 应用配置数据到画布 (共用: 文件加载 / 服务器加载)
 function applyConfigData(d) {
+  endEdit();
+  recordUndo();  // 加载整个配置前记录, 允许撤销回到加载前的画布
   const w = d.width || 2560;
   const h = d.height || 1440;
   setSizeSelect(w, h);
