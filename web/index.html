@@ -145,6 +145,22 @@
   .lib-modal-body .grp-body { padding: 12px; }
   .lib-modal-body .lib-empty { padding: 16px 0; }
 
+  /* ===== 关于弹窗 ===== */
+  .app-logo { cursor: pointer; display: inline-block; border-radius: 4px; padding: 0 3px; transition: background .15s; }
+  .app-logo:hover { background: rgba(200,170,110,.2); }
+  .about-modal-panel { width: 560px; max-width: 92vw; height: auto; max-height: 84vh; }
+  .about-body { padding: 18px 22px; overflow-y: auto; }
+  .about-row { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: #d5d8de; margin-bottom: 10px; }
+  .about-row .k { flex-shrink: 0; width: 64px; color: #9aa0ae; }
+  .about-row a { color: #c8aa6e; word-break: break-all; }
+  .about-ver { color: #e6e6e6; font-weight: 700; }
+  .about-log-head { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 8px; }
+  .about-log-title { font-size: 13px; font-weight: 700; color: #c8aa6e; }
+  .about-log { max-height: 260px; overflow-y: auto; background: #0d1016; border: 1px solid #232833; border-radius: 6px; padding: 8px 10px; }
+  .about-log-entry { font-family: Consolas, monospace; font-size: 11px; color: #d5a0a0; line-height: 1.55; padding: 2px 0; border-bottom: 1px solid #1a1e27; word-break: break-all; }
+  .about-log-entry .t { color: #6b7280; margin-right: 6px; }
+  .about-log-empty { font-size: 12px; color: #5c636e; text-align: center; padding: 18px 0; }
+
   /* ===== 右键菜单 ===== */
   .ctx-menu { position: fixed; z-index: 20000; background: #1e232e; border: 1px solid #353c4a; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.6); padding: 6px 0; min-width: 180px; display: none; }
   .ctx-menu.show { display: block; }
@@ -175,7 +191,7 @@
 
 <!-- 顶栏 -->
 <div class="topbar">
-  <span class="title">⚔ 一图流编辑器</span>
+  <span class="title"><span id="appLogo" class="app-logo" title="双击查看关于">⚔</span> 一图流编辑器</span>
   <label>画布尺寸
     <select id="selSize">
       <optgroup label="横屏">
@@ -273,7 +289,88 @@
 <!-- 右键菜单 -->
 <div class="ctx-menu" id="ctxMenu"></div>
 
+<!-- 关于弹窗 -->
+<div class="lib-modal" id="aboutModal">
+  <div class="lib-modal-mask" id="aboutModalMask"></div>
+  <div class="lib-modal-panel about-modal-panel">
+    <div class="lib-modal-head">
+      <span class="lib-modal-title">⚔ 关于 · LOL 一图流编辑器</span>
+      <button class="lib-modal-close" id="aboutModalClose" title="关闭 (Esc)">×</button>
+    </div>
+    <div class="about-body">
+      <div class="about-row"><span class="k">版本</span><span class="about-ver" id="aboutVersion"></span></div>
+      <div class="about-row"><span class="k">项目地址</span><a id="aboutUrl" href="https://github.com/zmer007/LOL-YTL" target="_blank" rel="noopener">https://github.com/zmer007/LOL-YTL</a></div>
+      <div class="about-log-head">
+        <span class="about-log-title">运行错误日志</span>
+        <button class="btn" id="aboutClearLog" title="清空全部日志">清空日志</button>
+      </div>
+      <div class="about-log" id="aboutLog"></div>
+    </div>
+  </div>
+</div>
+
 <script>
+// ============================================================
+//  错误日志采集 (环形缓冲 + localStorage 持久化, 防止无限堆积)
+//  必须最先执行, 以捕获后续所有代码的报错
+// ============================================================
+const APP_VERSION = '1.0.0';
+const ErrorLog = (function(){
+  const MAX_MEM = 200;        // 内存最多保留 200 条
+  const MAX_STORE = 100;      // 磁盘最多保留 100 条
+  const STORE_KEY = 'ytl_error_logs';
+  let logs = [];
+  // 恢复上次会话的日志 (崩溃后重启也能看到崩溃前的错误)
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+    if (Array.isArray(saved)) logs = saved.slice(-MAX_STORE);
+  } catch (e) { logs = []; }
+
+  function persist() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(logs.slice(-MAX_STORE))); } catch (e) {}
+  }
+  function add(msg) {
+    const s = String(msg == null ? '未知错误' : msg).slice(0, 1000);
+    // 连续相同错误只记一条, 防止错误循环刷掉有用历史
+    if (logs.length && logs[logs.length - 1].m === s) return;
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    logs.push({ t: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`, m: s });
+    if (logs.length > MAX_MEM) logs = logs.slice(-MAX_MEM);
+    persist();
+  }
+  return {
+    add,
+    all() { return logs.slice(); },
+    clear() { logs = []; persist(); }
+  };
+})();
+
+// 未捕获的运行时异常
+window.addEventListener('error', (ev) => {
+  const msg = ev.message || '未知错误';
+  ErrorLog.add(ev.filename ? `${msg} @ ${ev.filename.split('/').pop()}:${ev.lineno}:${ev.colno}` : msg);
+});
+// 未处理的 Promise rejection
+window.addEventListener('unhandledrejection', (ev) => {
+  const r = ev.reason;
+  ErrorLog.add('未处理的Promise: ' + ((r && (r.stack || r.message)) || r));
+});
+// 拦截 console.error: 保留原始方法, 写入失败静默处理, 杜绝递归
+(function(){
+  const origError = console.error.bind(console);
+  console.error = function(...args) {
+    try {
+      ErrorLog.add(args.map(a => {
+        if (a instanceof Error) return a.stack || a.message;
+        if (typeof a === 'object') { try { return JSON.stringify(a); } catch (e) { return String(a); } }
+        return String(a);
+      }).join(' '));
+    } catch (e) {}
+    origError(...args);
+  };
+})();
+
 // ============================================================
 //  状态
 // ============================================================
@@ -411,6 +508,23 @@ function addElement(type) {
   elements.push(el);
   render();
   select(el.id);
+}
+
+// ============================================================
+//  图层: 置顶 / 置底 (编辑器内按 zIndex 层叠)
+// ============================================================
+// 置顶: zIndex 高于所有元素
+function bringToFront(el) {
+  recordUndo();
+  el.zIndex = ++zCounter;
+  render();
+}
+// 置底: zIndex 低于所有元素
+function sendToBack(el) {
+  recordUndo();
+  const minZ = elements.reduce((m, x) => x === el ? m : Math.min(m, x.zIndex || 0), Infinity);
+  el.zIndex = isFinite(minZ) ? minZ - 1 : 2;
+  render();
 }
 
 // ============================================================
@@ -1174,6 +1288,10 @@ function renderProps() {
     html += row('边框色', `<input type="color" id="p_border" value="${e.border}">`);
     html += row('标题色', `<input type="color" id="p_titlecolor" value="${e.titleColor}">`);
     html += row('标题字号', `<input type="number" id="p_titlesize" value="${e.titleSize || Math.max(12, Math.round(e.h * 0.14))}" min="8" max="72">`);
+    html += row('图层', `<div class="two">
+      <button class="btn" id="p_bringfront" title="浮到所有元素最上层">⬆ 置顶</button>
+      <button class="btn" id="p_sendback" title="沉到所有元素最底层">⬇ 置底</button>
+    </div>`);
   }
 
   // 通用: 坐标尺寸
@@ -1217,6 +1335,12 @@ function bindProps(e) {
 
   const bold = document.getElementById('p_bold');
   if (bold) bold.addEventListener('change', ()=>upd({bold: bold.checked}));
+
+  // 图层: 置顶 / 置底
+  const bf = document.getElementById('p_bringfront');
+  if (bf) bf.onclick = () => bringToFront(e);
+  const sb = document.getElementById('p_sendback');
+  if (sb) sb.onclick = () => sendToBack(e);
 
   // 从图库选择应用到当前元素
   props.querySelectorAll('.lib-apply').forEach(item => {
@@ -1715,9 +1839,40 @@ document.getElementById('libModalRefresh').onclick = (ev) => {
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
     if (document.getElementById('ctxMenu').classList.contains('show')) hideCtxMenu();
+    else if (document.getElementById('aboutModal').classList.contains('show')) closeAboutModal();
     else closeLibraryModal();
   }
 });
+
+// ===== 关于弹窗 =====
+document.getElementById('aboutVersion').textContent = 'v' + APP_VERSION;
+function renderAboutLog() {
+  const box = document.getElementById('aboutLog');
+  const logs = ErrorLog.all();
+  if (!logs.length) {
+    box.innerHTML = '<div class="about-log-empty">暂无错误日志</div>';
+    return;
+  }
+  // 最新错误显示在最上面
+  box.innerHTML = logs.slice().reverse().map(l =>
+    `<div class="about-log-entry"><span class="t">${l.t}</span>${esc(l.m)}</div>`
+  ).join('');
+}
+function openAboutModal() {
+  renderAboutLog();
+  document.getElementById('aboutModal').classList.add('show');
+}
+function closeAboutModal() {
+  document.getElementById('aboutModal').classList.remove('show');
+}
+document.getElementById('appLogo').addEventListener('dblclick', openAboutModal);
+document.getElementById('aboutModalClose').onclick = closeAboutModal;
+document.getElementById('aboutModalMask').onclick = closeAboutModal;
+document.getElementById('aboutClearLog').onclick = () => {
+  ErrorLog.clear();
+  renderAboutLog();
+  toast('日志已清空');
+};
 
 // ===== 右键菜单: 移动到 / 复制到 分组 =====
 let ctxTarget = null;   // {type, groupId, itemId}

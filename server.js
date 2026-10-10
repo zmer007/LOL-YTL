@@ -306,7 +306,7 @@ function safeDecode(s) {
   try { return decodeURIComponent(s); } catch (e) { return s; }
 }
 
-async function serveFile(res, filePath) {
+async function serveFile(res, filePath, extraHeaders) {
   let data;
   try {
     data = await fsp.readFile(filePath);
@@ -314,7 +314,10 @@ async function serveFile(res, filePath) {
     return false;
   }
   const ext = path.extname(filePath).toLowerCase();
-  res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+  res.writeHead(200, Object.assign(
+    { 'Content-Type': MIME[ext] || 'application/octet-stream' },
+    extraHeaders || {}
+  ));
   res.end(data);
   return true;
 }
@@ -548,8 +551,9 @@ async function route(req, res, pathname, query) {
 
   // 前端页面
   if (pathname.includes('..')) return sendError(res, 404, '404 page not found');
+  // 前端页面: 禁止缓存, 避免升级后 Chromium 继续使用磁盘里的旧页面
   const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
-  if (await serveFile(res, path.join(webDir, rel))) return;
+  if (await serveFile(res, path.join(webDir, rel), { 'Cache-Control': 'no-store' })) return;
   sendError(res, 404, '404 page not found');
 }
 

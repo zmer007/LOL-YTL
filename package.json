@@ -26,21 +26,39 @@
       "server.js"
     ],
     "extraResources": [
-      { "from": "web", "to": "web" },
-      { "from": "assets", "to": "assets" }
+      {
+        "from": "web",
+        "to": "web"
+      },
+      {
+        "from": "assets",
+        "to": "assets"
+      }
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.png"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "LOL一图流编辑器"
+    "portable": {
+      "artifactName": "英雄联盟一图流编辑器免安装版.exe",
+      "splashImage": "build/splash.bmp"
     }
-  }
+  },
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zmer007/LOL-YTL.git"
+  },
+  "keywords": [],
+  "bugs": {
+    "url": "https://github.com/zmer007/LOL-YTL/issues"
+  },
+  "homepage": "https://github.com/zmer007/LOL-YTL#readme"
 }

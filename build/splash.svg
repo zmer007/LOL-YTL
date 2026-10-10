@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 340">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#2c4f7d"/>
+      <stop offset="0.55" stop-color="#1a3559"/>
+      <stop offset="1" stop-color="#0d2138"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="600" height="340" fill="url(#bg)"/>
+  <rect x="14" y="14" width="572" height="312" rx="10" fill="none" stroke="#d9b86a" stroke-width="2" opacity="0.8"/>
+
+  <text x="300" y="148" text-anchor="middle" font-size="58" fill="#d9b86a" font-family="Microsoft YaHei, Segoe UI Symbol">⚔</text>
+  <text x="300" y="210" text-anchor="middle" font-size="27" font-weight="700" letter-spacing="4" fill="#e6d3a0" font-family="Microsoft YaHei">英雄联盟一图流编辑器</text>
+  <text x="300" y="256" text-anchor="middle" font-size="15" letter-spacing="2" fill="#9fb4cc" font-family="Microsoft YaHei">正在准备运行环境，请稍候…</text>
+</svg>
