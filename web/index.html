@@ -170,8 +170,26 @@
 <!-- 顶栏 -->
 <div class="topbar">
   <span class="title">⚔ 一图流编辑器</span>
-  <label>宽 <input type="number" id="inW" value="1920" min="200"></label>
-  <label>高 <input type="number" id="inH" value="1080" min="200"></label>
+  <label>画布尺寸
+    <select id="selSize">
+      <optgroup label="横屏">
+        <option value="1280x720">1280 × 720 (HD)</option>
+        <option value="1366x768">1366 × 768</option>
+        <option value="1600x900">1600 × 900</option>
+        <option value="1920x1080">1920 × 1080 (FHD)</option>
+        <option value="2560x1440" selected>2560 × 1440 (2K)</option>
+        <option value="3840x2160">3840 × 2160 (4K)</option>
+      </optgroup>
+      <optgroup label="竖屏">
+        <option value="720x1280">720 × 1280</option>
+        <option value="1080x1920">1080 × 1920</option>
+        <option value="1080x2400">1080 × 2400 (手机)</option>
+        <option value="1440x2560">1440 × 2560 (2K竖屏)</option>
+        <option value="1440x3200">1440 × 3200</option>
+      </optgroup>
+      <option value="custom">自定义…</option>
+    </select>
+  </label>
   <button class="btn" id="btnApplySize">应用尺寸</button>
   <span class="divider"></span>
   <label>背景色 <input type="color" id="bgColor" value="#0c0e14"></label>
@@ -211,7 +229,7 @@
   <!-- 中间画布 -->
   <div class="canvas-wrap">
     <div class="canvas-bg">
-      <div id="workspace" style="width:1920px;height:1080px;"></div>
+      <div id="workspace" style="width:2560px;height:1440px;"></div>
     </div>
   </div>
 
@@ -1547,13 +1565,61 @@ async function cacheOfficialAssets() {
 // ============================================================
 //  顶栏: 尺寸 / 背景
 // ============================================================
-document.getElementById('btnApplySize').onclick = () => {
-  const w = parseInt(document.getElementById('inW').value) || 1920;
-  const h = parseInt(document.getElementById('inH').value) || 1080;
-  workspace.style.width = w+'px';
-  workspace.style.height = h+'px';
+// 读取当前画布尺寸 (从下拉选择或自定义)
+function getCanvasSize() {
+  const sel = document.getElementById('selSize');
+  const val = sel.value;
+  if (val === 'custom') {
+    const w = parseInt(sel.dataset.customW) || 2560;
+    const h = parseInt(sel.dataset.customH) || 1440;
+    return { w, h };
+  }
+  const [w, h] = val.split('x').map(Number);
+  return { w, h };
+}
+
+// 应用尺寸到画布
+function applyCanvasSize(w, h) {
+  workspace.style.width = w + 'px';
+  workspace.style.height = h + 'px';
   toast(`画布尺寸: ${w}×${h}`);
+}
+
+document.getElementById('btnApplySize').onclick = () => {
+  const { w, h } = getCanvasSize();
+  applyCanvasSize(w, h);
 };
+
+// 下拉选择变化时自动应用
+document.getElementById('selSize').addEventListener('change', function () {
+  if (this.value === 'custom') {
+    const cur = getCanvasSize();
+    const input = prompt('输入自定义尺寸 (格式: 宽x高, 例如 1920x1080):', `${cur.w}x${cur.h}`);
+    if (!input) {
+      // 用户取消, 恢复上一个非自定义选项
+      this.value = this.dataset.lastValid || '2560x1440';
+      return;
+    }
+    const m = input.match(/(\d+)\s*[x×*]\s*(\d+)/);
+    if (!m) {
+      toast('格式错误, 请使用 宽x高 格式');
+      this.value = this.dataset.lastValid || '2560x1440';
+      return;
+    }
+    const w = parseInt(m[1]);
+    const h = parseInt(m[2]);
+    this.dataset.customW = w;
+    this.dataset.customH = h;
+    // 更新自定义选项的显示文本
+    const opt = this.querySelector('option[value="custom"]');
+    opt.textContent = `自定义: ${w}×${h}`;
+    applyCanvasSize(w, h);
+  } else {
+    this.dataset.lastValid = this.value;
+    const { w, h } = getCanvasSize();
+    applyCanvasSize(w, h);
+  }
+});
 document.getElementById('bgColor').addEventListener('input', () => render());
 document.getElementById('btnBgImg').onclick = () => pickImage(d => { bgImageData = d; render(); });
 document.getElementById('btnClearBg').onclick = () => { bgImageData = null; render(); };
@@ -1564,11 +1630,12 @@ document.getElementById('btnClearBg').onclick = () => { bgImageData = null; rend
 
 // 应用配置数据到画布 (共用: 文件加载 / 服务器加载)
 function applyConfigData(d) {
-  document.getElementById('inW').value = d.width || 1920;
-  document.getElementById('inH').value = d.height || 1080;
+  const w = d.width || 2560;
+  const h = d.height || 1440;
+  setSizeSelect(w, h);
   document.getElementById('bgColor').value = d.bgColor || '#0c0e14';
-  workspace.style.width = d.width + 'px';
-  workspace.style.height = d.height + 'px';
+  workspace.style.width = w + 'px';
+  workspace.style.height = h + 'px';
   bgImageData = d.bgImage || null;
   elements = d.elements || [];
   // 注意: 不恢复配置中的 library 分组结构 —— 分组是用户持久化偏好,
@@ -1580,11 +1647,31 @@ function applyConfigData(d) {
   renderLibrary(); render(); renderProps();
 }
 
+// 根据宽高设置分辨率下拉 (匹配预设或设为自定义)
+function setSizeSelect(w, h) {
+  const sel = document.getElementById('selSize');
+  const key = `${w}x${h}`;
+  // 先检查是否匹配预设
+  const preset = sel.querySelector(`option[value="${key}"]`);
+  if (preset) {
+    sel.value = key;
+    sel.dataset.lastValid = key;
+  } else {
+    // 设为自定义
+    sel.dataset.customW = w;
+    sel.dataset.customH = h;
+    const opt = sel.querySelector('option[value="custom"]');
+    opt.textContent = `自定义: ${w}×${h}`;
+    sel.value = 'custom';
+  }
+}
+
 // 构建当前配置数据
 function buildConfigData() {
+  const { w, h } = getCanvasSize();
   return {
-    width: parseInt(document.getElementById('inW').value),
-    height: parseInt(document.getElementById('inH').value),
+    width: w,
+    height: h,
     bgColor: document.getElementById('bgColor').value,
     bgImage: bgImageData,
     elements
