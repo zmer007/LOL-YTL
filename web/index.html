@@ -1649,10 +1649,10 @@ function renderLibrary() {
 
   // 绑定: 新建分组
   box.querySelectorAll('.lib-add-grp').forEach(b => {
-    b.onclick = (ev) => {
+    b.onclick = async (ev) => {
       ev.stopPropagation();
       const type = b.dataset.type;
-      const name = prompt('分组名称:', '新分组');
+      const name = await askText('分组名称', '新分组');
       if (name !== null) {
         imageLibrary[type].push(newGroup(name.trim() || '新分组'));
         renderLibrary();
@@ -2062,10 +2062,10 @@ document.getElementById('btnApplySize').onclick = () => {
 };
 
 // 下拉选择变化时自动应用
-document.getElementById('selSize').addEventListener('change', function () {
+document.getElementById('selSize').addEventListener('change', async function () {
   if (this.value === 'custom') {
     const cur = getCanvasSize();
-    const input = prompt('输入自定义尺寸 (格式: 宽x高, 例如 1920x1080):', `${cur.w}x${cur.h}`);
+    const input = await askText('输入自定义尺寸 (格式: 宽x高, 例如 1920x1080)', `${cur.w}x${cur.h}`);
     if (!input) {
       // 用户取消, 恢复上一个非自定义选项
       this.value = this.dataset.lastValid || '2560x1440';
@@ -2186,7 +2186,7 @@ async function postConfig(name) {
 async function saveCurrentConfig() {
   let name = currentConfigName;
   if (!name) {
-    name = prompt('请输入配置名称:', '默认配置');
+    name = await askText('请输入配置名称', '默认配置');
     if (!name || !name.trim()) return;
     name = name.trim();
   }
@@ -2199,9 +2199,49 @@ async function saveCurrentConfig() {
   }
 }
 
+// 应用内输入弹窗 (Electron 不支持 window.prompt, 用此替代)
+// 确定 -> 字符串(可能为空); 取消 / Esc / 点遮罩 -> null
+function askText(title, defaultValue) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'lib-modal';
+    modal.innerHTML = `
+      <div class="lib-modal-mask"></div>
+      <div class="lib-modal-panel" style="width:420px;height:auto;max-width:90vw">
+        <div class="lib-modal-head">
+          <span class="lib-modal-title"></span>
+          <button class="lib-modal-close" title="关闭 (Esc)">×</button>
+        </div>
+        <div class="lib-modal-body" style="overflow:hidden">
+          <input class="ask-input" type="text" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#0c0e14;border:1px solid #c8aa6e55;border-radius:6px;color:#f0f0f0;font-size:14px;outline:none"/>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+            <button class="btn ask-cancel">取消</button>
+            <button class="btn ask-ok" style="background:#c8aa6e;color:#1a1a1a;font-weight:700">确定</button>
+          </div>
+        </div>
+      </div>`;
+    modal.querySelector('.lib-modal-title').textContent = title;
+    const input = modal.querySelector('.ask-input');
+    input.value = defaultValue == null ? '' : String(defaultValue);
+    let done = false;
+    const close = (val) => { if (done) return; done = true; modal.classList.remove('show'); modal.remove(); resolve(val); };
+    modal.querySelector('.ask-ok').onclick = () => close(input.value);
+    modal.querySelector('.ask-cancel').onclick = () => close(null);
+    modal.querySelector('.lib-modal-close').onclick = () => close(null);
+    modal.querySelector('.lib-modal-mask').onclick = () => close(null);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); close(input.value); }
+      else if (e.key === 'Escape') { e.preventDefault(); close(null); }
+    });
+    document.body.appendChild(modal);
+    modal.classList.add('show');
+    setTimeout(() => { input.focus(); input.select(); }, 0);
+  });
+}
+
 // 新建: 弹窗输入名称, 确定后清空画布并以该名称开始编辑
 async function newConfig() {
-  const input = prompt('请输入新配置名称:', '新配置');
+  const input = await askText('请输入新配置名称', '新配置');
   if (input === null) return;  // 取消
   const name = input.trim();
   if (!name) { toast('名称不能为空，已取消新建'); return; }

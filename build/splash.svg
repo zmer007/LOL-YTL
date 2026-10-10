@@ -11,5 +11,5 @@
 
   <text x="300" y="148" text-anchor="middle" font-size="58" fill="#d9b86a" font-family="Microsoft YaHei, Segoe UI Symbol">⚔</text>
   <text x="300" y="210" text-anchor="middle" font-size="27" font-weight="700" letter-spacing="4" fill="#e6d3a0" font-family="Microsoft YaHei">英雄联盟一图流编辑器</text>
-  <text x="300" y="256" text-anchor="middle" font-size="15" letter-spacing="2" fill="#9fb4cc" font-family="Microsoft YaHei">正在准备运行环境，请稍候…</text>
+  <text x="300" y="256" text-anchor="middle" font-size="15" letter-spacing="2" fill="#9fb4cc" font-family="Microsoft YaHei">正在解压文件，请稍候…</text>
 </svg>
