@@ -1089,20 +1089,28 @@ function restoreGroupsFromStorage() {
         if (newGroups.length === 0) newGroups.push(newGroup(DEFAULT_GROUP_NAME));
         for (const it of unmatched) newGroups[0].items.push(it);
       }
-      // 补全缺失的默认分类分组 (用户旧数据中没有分类分组时自动创建)
+      // 补全/重建默认分类分组: 始终确保分类分组包含所有该分类的官方图片
+      // (用户保存的分类分组可能为空或不完整, 需按服务器数据补全)
       const serverItems = serverLibraryData[t] || [];
       const catNames = DEFAULT_CATEGORIES[t] || [];
       for (const catName of catNames) {
-        if (savedGroupNames.has(catName)) continue;  // 用户已有该分组, 跳过
-        const grp = newGroup(catName);
+        // 找到已恢复的同名分组, 找不到则新建
+        let grp = newGroups.find(g => g.name === catName);
+        if (!grp) {
+          grp = newGroup(catName);
+          newGroups.push(grp);
+        }
+        // 收集已有图片的 URL 路径 (去重)
+        const existingUrls = new Set(grp.items.map(it => urlPath(it.url)));
+        // 补充缺失的该分类图片
         for (const it of serverItems) {
           let itemCat = it.category || '';
           if (t === 'champion') itemCat = CHAMPION_TAG_MAP[it.category] || '';
-          if (itemCat === catName) {
+          if (itemCat === catName && !existingUrls.has(urlPath(it.url))) {
             grp.items.push({ id: 'lib_' + (libImgId++), name: it.name, url: it.url });
+            existingUrls.add(urlPath(it.url));
           }
         }
-        if (grp.items.length > 0) newGroups.push(grp);
       }
       imageLibrary[t] = newGroups;
     }
@@ -1112,7 +1120,7 @@ function restoreGroupsFromStorage() {
 // 从服务器加载图库列表
 async function loadLibraryFromServer() {
   try {
-    const res = await fetch('/api/library');
+    const res = await fetch('/api/library', { cache: 'no-store' });
     const data = await res.json();
     serverLibraryData = data;  // 保存原始数据(含 category), 供恢复分组时使用
     imageLibrary = { champion: [], item: [], rune: [] };
