@@ -381,11 +381,11 @@ function addElement(type) {
   if (type === 'champion') {
     el = { id: uid(), type, x: 8, y: 8, w: 56, h: 56, name: '英雄', color: randColor(type+idCounter), image: null, border: '#782828' };
   } else if (type === 'item') {
-    el = { id: uid(), type, x: 8, y: 8, w: 44, h: 44, name: '装备', color: randColor(type+idCounter), image: null, border: '#505064' };
+    el = { id: uid(), type, x: 8, y: 8, w: 56, h: 56, name: '装备', color: randColor(type+idCounter), image: null, border: '#505064' };
   } else if (type === 'rune') {
-    el = { id: uid(), type, x: 8, y: 8, w: 40, h: 40, name: '符文', color: randColor(type+idCounter), image: null, border: '#7858a0' };
+    el = { id: uid(), type, x: 8, y: 8, w: 56, h: 56, name: '符文', color: randColor(type+idCounter), image: null, border: '#7858a0' };
   } else if (type === 'summoner') {
-    el = { id: uid(), type, x: 8, y: 8, w: 44, h: 44, name: '召唤师技能', color: randColor(type+idCounter), image: null, border: '#2a6a4a' };
+    el = { id: uid(), type, x: 8, y: 8, w: 56, h: 56, name: '召唤师技能', color: randColor(type+idCounter), image: null, border: '#2a6a4a' };
   } else if (type === 'text') {
     el = { id: uid(), type, x: cx-80, y: cy-14, w: 160, h: 28, text: '文字内容', fontSize: 16, color: '#e6e6e6', bold: false, bg: 'transparent' };
   } else if (type === 'panel') {
@@ -542,8 +542,8 @@ workspace.addEventListener('drop', (ev) => {
   if (!libItem) return;
   const rect = workspace.getBoundingClientRect();
   // 元素默认尺寸
-  const sizes = { champion: { w: 56, h: 56, border: '#782828' }, item: { w: 44, h: 44, border: '#505064' }, rune: { w: 40, h: 40, border: '#7858a0' }, summoner: { w: 44, h: 44, border: '#2a6a4a' } };
-  const s = sizes[type] || { w: 44, h: 44, border: '#505064' };
+  const sizes = { champion: { w: 56, h: 56, border: '#782828' }, item: { w: 56, h: 56, border: '#505064' }, rune: { w: 56, h: 56, border: '#7858a0' }, summoner: { w: 56, h: 56, border: '#2a6a4a' } };
+  const s = sizes[type] || { w: 56, h: 56, border: '#505064' };
   const x = Math.round(ev.clientX - rect.left - s.w / 2);
   const y = Math.round(ev.clientY - rect.top - s.h / 2);
   const el = {
