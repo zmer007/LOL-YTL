@@ -44,7 +44,7 @@
           ]
         }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.ico"
     },
     "portable": {
       "artifactName": "英雄联盟一图流编辑器免安装版.exe",
