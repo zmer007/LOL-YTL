@@ -57,6 +57,22 @@ func runCache(version string) {
 	cacheMu.Lock()
 	cacheProgress = CacheProgress{Running: false, Stage: "done", Message: "缓存完成!"}
 	cacheMu.Unlock()
+	// 缓存成功, 更新令牌使图片URL变化, 强制浏览器丢弃旧缓存
+	cacheToken.Store(fmt.Sprint(time.Now().Unix()))
+}
+
+// latestVersion 从 Data Dragon 获取最新版本号, 失败时回退到 DefaultVersion
+func latestVersion() string {
+	url := strings.TrimSuffix(DDragonBase, "/cdn") + "/api/versions.json"
+	raw, err := fetchJSON(url)
+	if err == nil {
+		if arr, ok := raw.([]interface{}); ok && len(arr) > 0 {
+			if v, ok := arr[0].(string); ok && v != "" {
+				return v
+			}
+		}
+	}
+	return DefaultVersion
 }
 
 // cacheChampions 下载所有英雄头像

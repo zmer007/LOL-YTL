@@ -35,10 +35,17 @@ var (
 	cacheMu       sync.Mutex
 	cacheProgress CacheProgress
 	cacheVersion  atomic.Value // string
+	cacheToken    atomic.Value // string - 每次缓存成功后变化, 附加到图片URL使浏览器重新加载
 )
 
 func init() {
 	cacheVersion.Store(DefaultVersion)
+	// 用元数据文件修改时间作为初始 token, 保证服务重启后已更新的图片URL不同于旧缓存
+	token := "0"
+	if info, err := os.Stat(filepath.Join(MetaDir, "champions.json")); err == nil {
+		token = fmt.Sprint(info.ModTime().Unix())
+	}
+	cacheToken.Store(token)
 }
 
 // ---------- 静态文件 ----------
@@ -90,8 +97,8 @@ func listType(typeDir string) []LibItem {
 			continue
 		}
 		cnName := strings.TrimSuffix(name, filepath.Ext(name))
-		// URL 带版本号参数, 避免浏览器缓存旧图片
-		ver := cacheVersion.Load().(string)
+		// URL 带版本号+缓存令牌参数, 同一版本重复缓存后URL也会变化, 避免浏览器缓存旧图片
+		ver := fmt.Sprintf("%s-%s", cacheVersion.Load().(string), cacheToken.Load().(string))
 		items = append(items, LibItem{
 			Name:     cnName,
 			URL:      fmt.Sprintf("/assets/%s/%s?v=%s", typeDir, name, ver),
@@ -198,7 +205,8 @@ func cacheStartHandler(w http.ResponseWriter, r *http.Request) {
 
 	version := r.URL.Query().Get("version")
 	if version == "" {
-		version = cacheVersion.Load().(string)
+		// 未指定版本时自动取官方最新版本, 避免硬编码默认值过期
+		version = latestVersion()
 	}
 	cacheVersion.Store(version)
 
