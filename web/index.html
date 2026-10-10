@@ -96,6 +96,10 @@
   .lib-item:hover .lib-del { opacity: 1; }
   .lib-del:hover { background: #c0392b; }
 
+  /* 配置列表行 (勿复用 .lib-item, 那是正方形图片格子样式) */
+  .cfg-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #222; border-radius: 5px; transition: background .15s; }
+  .cfg-item:hover { background: #1a1e27; }
+
   /* ===== 分组 ===== */
   .lib-type { margin-bottom: 14px; }
   .lib-type-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px solid #232833; }
@@ -2046,7 +2050,7 @@ async function loadConfigList() {
       return;
     }
     box.innerHTML = list.map(it => `
-      <div class="lib-item" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #222">
+      <div class="cfg-item">
         <div style="flex:1">
           <div style="color:#eee;font-size:14px">${esc(it.name)}</div>
           <div style="color:#666;font-size:11px">${it.modTime} · ${Math.round(it.size/1024)} KB</div>
