@@ -204,7 +204,7 @@
   <button class="btn" id="btnLoad">加载JSON</button>
   <button class="btn" id="btnClearCache" title="删除所有已缓存的英雄/装备/符文/召唤师技能图片">清空缓存</button>
   <span class="divider"></span>
-  <button class="btn primary" id="btnExport">导出PNG</button>
+  <button class="btn primary" id="btnExport">导出JSON</button>
   <button class="btn primary" id="btnCopy">复制图片</button>
 </div>
 
@@ -223,6 +223,8 @@
       · 拖动元素调整位置<br>
       · 拖动角点调整大小<br>
       · 选中后在右侧编辑<br>
+      · Ctrl/Cmd+点击可多选<br>
+      · 方向键移动 / Ctrl+方向键微调<br>
       · Ctrl+C / Ctrl+V 复制粘贴<br>
       · Ctrl+D 快速复制<br>
       · Ctrl+Z 撤销 / Ctrl+Shift+Z 重做<br>
@@ -456,7 +458,7 @@ function buildNode(e) {
     const t = document.createElement('div');
     t.className = 'ptitle';
     t.style.color = e.titleColor;
-    t.style.fontSize = Math.max(12, Math.round(e.h * 0.14)) + 'px';
+    t.style.fontSize = (e.titleSize || Math.max(12, Math.round(e.h * 0.14))) + 'px';
     t.textContent = e.title || '';
     d.appendChild(t);
   }
@@ -580,8 +582,16 @@ workspace.addEventListener('mousedown', (ev) => {
     dragState = { mode: 'resize', id, handle, startX: ev.clientX, startY: ev.clientY, orig: {...el} };
   } else {
     // 移动
-    // 若点击的是已多选的元素之一，保持多选；否则单选
-    if (!selectedIds.includes(id)) {
+    if (ev.ctrlKey || ev.metaKey) {
+      // Ctrl/Cmd+左键: 切换该元素选中状态, 实现连续多选/取消
+      const removing = selectedIds.includes(id);
+      const newIds = removing
+        ? selectedIds.filter(sid => sid !== id)
+        : [...selectedIds, id];
+      if (newIds.length === 0) { ev.preventDefault(); return; }  // 全部取消, 不进入拖拽
+      setSelectedIds(newIds);
+      if (removing) { ev.preventDefault(); return; }  // 刚被取消选中的元素不参与本次拖拽
+    } else if (!selectedIds.includes(id)) {
       select(id);
     }
     // 记录所有选中元素的初始位置（用于批量移动）
@@ -692,7 +702,7 @@ document.addEventListener('mousemove', (ev) => {
 });
 
 // 框选：鼠标抬起
-document.addEventListener('mouseup', () => {
+document.addEventListener('mouseup', (ev) => {
   if (!marquee) return;
   if (marquee.active) {
     const x = Math.min(marquee.startX, marquee.curX);
@@ -702,8 +712,8 @@ document.addEventListener('mouseup', () => {
     const ids = getElementsInRect(x, y, x + w, y + h);
     setSelectedIds(ids);
   } else {
-    // 单击空白：清除选择
-    select(null);
+    // 单击空白：清除选择 (Ctrl/Cmd+点击空白保留当前选择, 便于继续追加)
+    if (!(ev.ctrlKey || ev.metaKey)) select(null);
   }
   marqueeEl.style.display = 'none';
   marquee = null;
@@ -787,6 +797,44 @@ document.addEventListener('keydown', (ev) => {
     renderProps();
     ev.preventDefault();
   }
+});
+
+// ============================================================
+//  方向键移动选中元素 (直接按=大步幅10px, Ctrl/Cmd+按=微调1px)
+// ============================================================
+let arrowUndoTimer = null;
+
+function moveSelected(dx, dy) {
+  if (selectedIds.length === 0) return;
+  if (gestureSnap === null) beginGesture();  // 连续按键共用一个撤销会话
+  for (const id of selectedIds) {
+    const e = elements.find(x => x.id === id);
+    if (!e) continue;
+    e.x += dx;
+    e.y += dy;
+  }
+  render();
+  renderProps();
+  // 停止按键 400ms 后提交撤销记录, 避免连按刷爆撤销栈
+  clearTimeout(arrowUndoTimer);
+  arrowUndoTimer = setTimeout(() => {
+    arrowUndoTimer = null;
+    endGesture();
+  }, 400);
+}
+
+document.addEventListener('keydown', (ev) => {
+  if (isEditingField()) return;
+  if (selectedIds.length === 0) return;
+  const step = (ev.ctrlKey || ev.metaKey) ? 1 : 10;
+  let dx = 0, dy = 0;
+  if (ev.key === 'ArrowUp') dy = -step;
+  else if (ev.key === 'ArrowDown') dy = step;
+  else if (ev.key === 'ArrowLeft') dx = -step;
+  else if (ev.key === 'ArrowRight') dx = step;
+  else return;
+  moveSelected(dx, dy);
+  ev.preventDefault();
 });
 
 // ============================================================
@@ -943,6 +991,8 @@ function endEdit() {
 
 // 拖拽手势: mousedown 时开始, mouseup 时提交 (整次拖动只产生一条记录)
 function beginGesture() {
+  // 若方向键移动会话尚未提交, 先提交, 避免其撤销点被拖拽快照覆盖丢失
+  if (arrowUndoTimer) { clearTimeout(arrowUndoTimer); arrowUndoTimer = null; endGesture(); }
   gestureSnap = snapshotState();
 }
 function endGesture() {
@@ -1113,6 +1163,7 @@ function renderProps() {
     html += row('填充', `<input type="text" id="p_bg" value="${e.bg}">`);
     html += row('边框色', `<input type="color" id="p_border" value="${e.border}">`);
     html += row('标题色', `<input type="color" id="p_titlecolor" value="${e.titleColor}">`);
+    html += row('标题字号', `<input type="number" id="p_titlesize" value="${e.titleSize || Math.max(12, Math.round(e.h * 0.14))}" min="8" max="72">`);
   }
 
   // 通用: 坐标尺寸
@@ -1148,6 +1199,7 @@ function bindProps(e) {
   bind('p_bg','bg');
   bind('p_border','border');
   bind('p_titlecolor','titleColor');
+  bind('p_titlesize','titleSize', v=>Math.max(8, parseInt(v)||12));
   bind('p_x','x', v=>parseInt(v)||0);
   bind('p_y','y', v=>parseInt(v)||0);
   bind('p_w','w', v=>Math.max(20,parseInt(v)||20));
@@ -2170,8 +2222,9 @@ async function exportCanvas() {
     } catch (e) {}
   }
 
-  // 按 zIndex 排序
-  const sorted = [...elements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  // 按 zIndex 排序 (与画布 DOM 规则一致: 面板永远在最底层, 避免导出时面板盖住图标)
+  const zOf = e => e.type === 'panel' ? 1 : Math.max(2, e.zIndex || 0);
+  const sorted = [...elements].sort((a, b) => zOf(a) - zOf(b));
 
   // 预加载图片
   const imgCache = {};
@@ -2194,7 +2247,7 @@ async function exportCanvas() {
       ctx.stroke();
       if (e.title) {
         ctx.fillStyle = e.titleColor || '#c8aa6e';
-        ctx.font = `bold ${Math.max(12, Math.round(e.h * 0.14))}px "PingFang SC","Microsoft YaHei",sans-serif`;
+        ctx.font = `bold ${e.titleSize || Math.max(12, Math.round(e.h * 0.14))}px "PingFang SC","Microsoft YaHei",sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText(e.title, e.x + 12, e.y + 8);
@@ -2229,15 +2282,16 @@ async function exportCanvas() {
   return canvas;
 }
 
-document.getElementById('btnExport').onclick = async () => {
-  const canvas = await exportCanvas();
-  canvas.toBlob(blob => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '一图流.png';
-    a.click();
-    toast('已导出 PNG');
-  });
+// 导出 JSON: 将当前画布配置下载为本地文件, 可通过"加载JSON"从本地文件导入
+document.getElementById('btnExport').onclick = () => {
+  const data = JSON.stringify(buildConfigData(), null, 2);
+  const name = (currentConfigName || '一图流').replace(/[\\/:*?"<>|]/g, '_');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  a.download = `${name}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast(`已导出 JSON: ${name}.json`);
 };
 
 document.getElementById('btnCopy').onclick = async () => {
@@ -2248,7 +2302,7 @@ document.getElementById('btnCopy').onclick = async () => {
         await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
         toast('图片已复制到剪贴板');
       } catch(err) {
-        toast('复制失败,请用导出PNG');
+        toast('复制失败,请重试');
       }
     });
   } catch(err) {
