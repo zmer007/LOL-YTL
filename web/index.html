@@ -627,6 +627,8 @@ workspace.appendChild(marqueeEl);
 workspace.addEventListener('mousedown', (ev) => {
   if (!(ev.target === workspace || ev.target.classList.contains('bg-img'))) return;
   if (ev.button !== 0) return;
+  // 点空白处让属性输入框失焦 (提交编辑, 并避免数字框保留焦点被滚轮误改)
+  if (props.contains(document.activeElement)) document.activeElement.blur();
   const rect = workspace.getBoundingClientRect();
   marquee = {
     startX: ev.clientX - rect.left,
@@ -698,6 +700,10 @@ workspace.addEventListener('mousedown', (ev) => {
   const id = node.dataset.id;
   const el = elements.find(x => x.id === id);
   if (!el) return;
+
+  // 开始拖拽前让属性输入框失焦: mousedown 的 preventDefault 会保留焦点,
+  // 否则数字框仍处于聚焦态, 滚轮/触摸板会在拖拽瞬间误改字号或尺寸
+  if (props.contains(document.activeElement)) document.activeElement.blur();
 
   beginGesture();  // 记录拖拽前状态, mouseup 时提交为一条撤销记录
   if (ev.target.classList.contains('resize-handle')) {
@@ -772,6 +778,12 @@ document.addEventListener('mousemove', (ev) => {
   if (node) {
     node.style.left = el.x+'px'; node.style.top = el.y+'px';
     node.style.width = el.w+'px'; node.style.height = el.h+'px';
+    // 缩放面板时标题实时按高度比例变化, 避免拖完后下次 render 才"突然跳大";
+    // 已手动指定 titleSize 则尊重用户设置, 不再随高度变化
+    if (dragState.mode === 'resize' && el.type === 'panel' && !el.titleSize) {
+      const tn = node.querySelector('.ptitle');
+      if (tn) tn.style.fontSize = Math.max(12, Math.round(el.h * 0.14)) + 'px';
+    }
   }
   if (selectedId === el.id) renderProps();
   // 显示实时坐标
@@ -1160,6 +1172,11 @@ props.addEventListener('focusout', () => {
     if (!props.contains(document.activeElement)) endEdit();
   }, 0);
 });
+// 数字输入框禁止滚轮步进: 拖拽面板时触摸板/滚轮误碰会偷偷改字号/尺寸,
+// 表现为"拖一下文字偶尔变大"。如需调整仍可直接输入或点击原生上下箭头
+props.addEventListener('wheel', (ev) => {
+  if (ev.target.matches && ev.target.matches('input[type="number"]')) ev.preventDefault();
+}, { passive: false });
 
 // ============================================================
 //  属性面板
