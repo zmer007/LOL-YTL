@@ -484,6 +484,9 @@ document.querySelectorAll('.tool[data-type]').forEach(btn => {
   });
 });
 
+// 分区面板标题固定默认字号: 标题字号不随面板尺寸缩放, 仅由用户在属性面板显式修改
+const PANEL_TITLE_DEFAULT_SIZE = 20;
+
 function addElement(type) {
   if (!['champion','item','rune','summoner','text','panel'].includes(type)) return;
   const rect = workspace.getBoundingClientRect();
@@ -501,7 +504,7 @@ function addElement(type) {
   } else if (type === 'text') {
     el = { id: uid(), type, x: cx-80, y: cy-14, w: 160, h: 28, text: '文字内容', fontSize: 16, color: '#e6e6e6', bold: false, bg: 'transparent' };
   } else if (type === 'panel') {
-    el = { id: uid(), type, x: 8, y: 8, w: 260, h: 140, title: '分区标题', bg: 'rgba(20,24,36,0.85)', border: '#505a78', titleColor: '#c89b3c' };
+    el = { id: uid(), type, x: 8, y: 8, w: 260, h: 140, title: '分区标题', bg: 'rgba(20,24,36,0.85)', border: '#505a78', titleColor: '#c89b3c', titleSize: PANEL_TITLE_DEFAULT_SIZE };
   }
   el.zIndex = ++zCounter;
   recordUndo();
@@ -582,7 +585,7 @@ function buildNode(e) {
     const t = document.createElement('div');
     t.className = 'ptitle';
     t.style.color = e.titleColor;
-    t.style.fontSize = (e.titleSize || Math.max(12, Math.round(e.h * 0.14))) + 'px';
+    t.style.fontSize = (e.titleSize || PANEL_TITLE_DEFAULT_SIZE) + 'px';
     t.textContent = e.title || '';
     d.appendChild(t);
   }
@@ -778,12 +781,6 @@ document.addEventListener('mousemove', (ev) => {
   if (node) {
     node.style.left = el.x+'px'; node.style.top = el.y+'px';
     node.style.width = el.w+'px'; node.style.height = el.h+'px';
-    // 缩放面板时标题实时按高度比例变化, 避免拖完后下次 render 才"突然跳大";
-    // 已手动指定 titleSize 则尊重用户设置, 不再随高度变化
-    if (dragState.mode === 'resize' && el.type === 'panel' && !el.titleSize) {
-      const tn = node.querySelector('.ptitle');
-      if (tn) tn.style.fontSize = Math.max(12, Math.round(el.h * 0.14)) + 'px';
-    }
   }
   if (selectedId === el.id) renderProps();
   // 显示实时坐标
@@ -1304,7 +1301,7 @@ function renderProps() {
     html += row('填充', `<input type="text" id="p_bg" value="${e.bg}">`);
     html += row('边框色', `<input type="color" id="p_border" value="${e.border}">`);
     html += row('标题色', `<input type="color" id="p_titlecolor" value="${e.titleColor}">`);
-    html += row('标题字号', `<input type="number" id="p_titlesize" value="${e.titleSize || Math.max(12, Math.round(e.h * 0.14))}" min="8" max="72">`);
+    html += row('标题字号', `<input type="number" id="p_titlesize" value="${e.titleSize || PANEL_TITLE_DEFAULT_SIZE}" min="8" max="72">`);
     html += row('图层', `<div class="two">
       <button class="btn" id="p_bringfront" title="浮到所有元素最上层">⬆ 置顶</button>
       <button class="btn" id="p_sendback" title="沉到所有元素最底层">⬇ 置底</button>
@@ -1344,7 +1341,7 @@ function bindProps(e) {
   bind('p_bg','bg');
   bind('p_border','border');
   bind('p_titlecolor','titleColor');
-  bind('p_titlesize','titleSize', v=>Math.max(8, parseInt(v)||12));
+  bind('p_titlesize','titleSize', v=>Math.max(8, parseInt(v)||PANEL_TITLE_DEFAULT_SIZE));
   bind('p_x','x', v=>parseInt(v)||0);
   bind('p_y','y', v=>parseInt(v)||0);
   bind('p_w','w', v=>Math.max(20,parseInt(v)||20));
@@ -2473,7 +2470,7 @@ async function exportCanvas() {
       ctx.stroke();
       if (e.title) {
         ctx.fillStyle = e.titleColor || '#c8aa6e';
-        ctx.font = `bold ${e.titleSize || Math.max(12, Math.round(e.h * 0.14))}px "PingFang SC","Microsoft YaHei",sans-serif`;
+        ctx.font = `bold ${e.titleSize || PANEL_TITLE_DEFAULT_SIZE}px "PingFang SC","Microsoft YaHei",sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText(e.title, e.x + 12, e.y + 8);
